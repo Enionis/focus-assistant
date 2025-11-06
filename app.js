@@ -21,6 +21,57 @@ function initializeApp() {
     if (window.WebApp) {
         window.WebApp.ready();
         console.log('MAX WebApp инициализирован');
+        
+        // Получаем стартовые параметры от бота
+        const startParam = window.WebApp.initDataUnsafe?.start_param;
+        if (startParam) {
+            try {
+                // Декодируем base64 данные
+                const decodedData = atob(startParam);
+                const botData = JSON.parse(decodedData);
+                console.log('Получены данные от бота:', botData);
+                
+                // Обновляем данные приложения
+                if (botData.task) {
+                    appData.currentTask = botData.task;
+                }
+                if (botData.subtasks && botData.subtasks.length > 0) {
+                    appData.subtasks = botData.subtasks;
+                }
+                if (botData.sessions !== undefined) {
+                    appData.sessionsCompleted = botData.sessions;
+                }
+                if (botData.minutes !== undefined) {
+                    appData.focusTime = botData.minutes;
+                }
+                if (botData.streak !== undefined) {
+                    appData.currentStreak = botData.streak;
+                }
+                if (botData.xp !== undefined) {
+                    appData.xp = botData.xp;
+                }
+                
+                // Обновляем уровень на основе XP
+                if (appData.xp >= 100) {
+                    appData.userLevel = 'Ученик';
+                } else if (appData.xp >= 50) {
+                    appData.userLevel = 'Новичок+';
+                } else {
+                    appData.userLevel = 'Новичок';
+                }
+                
+                // Сохраняем и обновляем UI
+                saveUserData();
+                updateUI();
+                
+                // Показываем уведомление
+                if (botData.task) {
+                    showNotification('Данные обновлены из бота! 🎯');
+                }
+            } catch (e) {
+                console.error('Ошибка при обработке данных от бота:', e);
+            }
+        }
     }
 }
 
@@ -73,8 +124,30 @@ function updateUI() {
     document.getElementById('currentStreak').textContent = appData.currentStreak;
     
     // Обновляем уровень и XP
-    document.querySelector('.level strong').textContent = appData.userLevel;
-    document.querySelector('.xp').textContent = appData.xp + ' XP';
+    const levelElement = document.querySelector('.level strong');
+    const xpElement = document.querySelector('.xp');
+    if (levelElement) {
+        levelElement.textContent = appData.userLevel;
+    }
+    if (xpElement) {
+        xpElement.textContent = appData.xp + ' XP';
+    }
+    
+    // Обновляем текущую задачу
+    const currentTaskElement = document.getElementById('currentTask');
+    if (currentTaskElement) {
+        if (appData.currentTask) {
+            currentTaskElement.innerHTML = `
+                <h3>${appData.currentTask}</h3>
+                <button class="btn primary" onclick="startNewTask()">🎯 Создать новую задачу</button>
+            `;
+        } else {
+            currentTaskElement.innerHTML = `
+                <p>Нет активных задач</p>
+                <button class="btn primary" onclick="startNewTask()">🎯 Создать задачу</button>
+            `;
+        }
+    }
     
     // Обновляем список подзадач
     updateSubtasksList();
