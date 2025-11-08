@@ -1,0 +1,19 @@
+name: External Cron (every 10 min)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping-cron-endpoint:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cron-ping
+      cancel-in-progress: false
+    steps:
+      - name: Call /api/cron
+        run: |
+          curl -fsS -X GET "$CRON_URL" || exit 1
+    env:
+      CRON_URL: ${{ secrets.CRON_URL }}
