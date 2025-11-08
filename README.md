@@ -6,7 +6,7 @@
 
 ```
 xaxaton_max/
-├── webapp/          # Веб-приложение для Max
+├── docs/            # Веб-приложение для Max (GitHub Pages)
 │   ├── index.html
 │   ├── main.js
 │   └── styles.css
