@@ -47,15 +47,61 @@ async function loadData() {
         const settingsStr = await WebApp.DeviceStorage.getItem('focus_settings');
         const statsStr = await WebApp.DeviceStorage.getItem('focus_stats');
         const tasksStr = await WebApp.DeviceStorage.getItem('focus_tasks');
+        const activeTaskStr = await WebApp.DeviceStorage.getItem('focus_activeTask');
+        const activeTaskIdStr = await WebApp.DeviceStorage.getItem('focus_activeTaskId');
+        const pomodoroStateStr = await WebApp.DeviceStorage.getItem('focus_pomodoroState');
+        const currentViewStr = await WebApp.DeviceStorage.getItem('focus_currentView');
 
-        if (settingsStr) {
-            appState.settings = { ...appState.settings, ...JSON.parse(settingsStr) };
+        // Если данные не загрузились из WebApp.DeviceStorage, пробуем загрузить из localStorage
+        const loadFromStorage = (key, defaultValue = null) => {
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    const value = localStorage.getItem(key);
+                    return value || defaultValue;
+                }
+            } catch (e) {
+                console.warn(`Failed to load ${key} from localStorage:`, e);
+            }
+            return defaultValue;
+        };
+
+        const finalSettingsStr = settingsStr || loadFromStorage('focus_settings');
+        const finalStatsStr = statsStr || loadFromStorage('focus_stats');
+        const finalTasksStr = tasksStr || loadFromStorage('focus_tasks');
+        const finalActiveTaskStr = activeTaskStr || loadFromStorage('focus_activeTask');
+        const finalActiveTaskIdStr = activeTaskIdStr || loadFromStorage('focus_activeTaskId');
+        const finalPomodoroStateStr = pomodoroStateStr || loadFromStorage('focus_pomodoroState');
+        const finalCurrentViewStr = currentViewStr || loadFromStorage('focus_currentView');
+
+        if (finalSettingsStr) {
+            appState.settings = { ...appState.settings, ...JSON.parse(finalSettingsStr) };
         }
-        if (statsStr) {
-            appState.stats = { ...appState.stats, ...JSON.parse(statsStr) };
+        if (finalStatsStr) {
+            appState.stats = { ...appState.stats, ...JSON.parse(finalStatsStr) };
         }
-        if (tasksStr) {
-            appState.tasks = JSON.parse(tasksStr);
+        if (finalTasksStr) {
+            appState.tasks = JSON.parse(finalTasksStr);
+        }
+        if (finalActiveTaskStr) {
+            appState.activeTask = JSON.parse(finalActiveTaskStr);
+        }
+        if (finalActiveTaskIdStr) {
+            appState.activeTaskId = finalActiveTaskIdStr;
+        }
+        if (finalCurrentViewStr) {
+            appState.currentView = finalCurrentViewStr;
+        }
+        
+        // Восстанавливаем состояние Pomodoro таймера
+        if (finalPomodoroStateStr) {
+            const pomodoroState = JSON.parse(finalPomodoroStateStr);
+            if (pomodoroState.isActive && pomodoroState.timeLeft > 0) {
+                pomodoroTimeLeft = pomodoroState.timeLeft;
+                pomodoroIsPaused = pomodoroState.isPaused;
+                if (pomodoroState.activeTask) {
+                    appState.activeTask = pomodoroState.activeTask;
+                }
+            }
         }
     } catch (error) {
         console.error('Error loading data:', error);
@@ -64,35 +110,121 @@ async function loadData() {
 
 async function saveSettings(settings) {
     appState.settings = { ...appState.settings, ...settings };
-    await WebApp.DeviceStorage.setItem('focus_settings', JSON.stringify(appState.settings));
+    await saveAllData();
     render();
 }
 
 async function saveStats(stats) {
     appState.stats = { ...appState.stats, ...stats };
-    await WebApp.DeviceStorage.setItem('focus_stats', JSON.stringify(appState.stats));
+    await saveAllData();
     render();
 }
 
 async function saveTasks(tasks) {
     appState.tasks = tasks;
-    await WebApp.DeviceStorage.setItem('focus_tasks', JSON.stringify(appState.tasks));
+    await saveAllData();
     render();
 }
 
-function navigateTo(view) {
+async function saveAllData() {
+    try {
+        const settingsJson = JSON.stringify(appState.settings);
+        const statsJson = JSON.stringify(appState.stats);
+        const tasksJson = JSON.stringify(appState.tasks);
+        const pomodoroState = {
+            isActive: pomodoroTimer !== null,
+            timeLeft: pomodoroTimeLeft,
+            isPaused: pomodoroIsPaused,
+            activeTask: appState.activeTask,
+        };
+        const pomodoroStateJson = JSON.stringify(pomodoroState);
+        
+        // Сохраняем в WebApp.DeviceStorage (основной метод)
+        await WebApp.DeviceStorage.setItem('focus_settings', settingsJson);
+        await WebApp.DeviceStorage.setItem('focus_stats', statsJson);
+        await WebApp.DeviceStorage.setItem('focus_tasks', tasksJson);
+        await WebApp.DeviceStorage.setItem('focus_currentView', appState.currentView);
+        await WebApp.DeviceStorage.setItem('focus_pomodoroState', pomodoroStateJson);
+        
+        // Сохраняем активную задачу
+        if (appState.activeTask) {
+            await WebApp.DeviceStorage.setItem('focus_activeTask', JSON.stringify(appState.activeTask));
+        } else {
+            await WebApp.DeviceStorage.removeItem('focus_activeTask');
+        }
+        
+        if (appState.activeTaskId) {
+            await WebApp.DeviceStorage.setItem('focus_activeTaskId', appState.activeTaskId);
+        } else {
+            await WebApp.DeviceStorage.removeItem('focus_activeTaskId');
+        }
+        
+        // Также сохраняем в localStorage как резервный вариант
+        if (typeof localStorage !== 'undefined') {
+            try {
+                localStorage.setItem('focus_settings', settingsJson);
+                localStorage.setItem('focus_stats', statsJson);
+                localStorage.setItem('focus_tasks', tasksJson);
+                localStorage.setItem('focus_currentView', appState.currentView);
+                localStorage.setItem('focus_pomodoroState', pomodoroStateJson);
+                
+                if (appState.activeTask) {
+                    localStorage.setItem('focus_activeTask', JSON.stringify(appState.activeTask));
+                } else {
+                    localStorage.removeItem('focus_activeTask');
+                }
+                
+                if (appState.activeTaskId) {
+                    localStorage.setItem('focus_activeTaskId', appState.activeTaskId);
+                } else {
+                    localStorage.removeItem('focus_activeTaskId');
+                }
+            } catch (e) {
+                console.warn('Failed to save to localStorage:', e);
+            }
+        }
+        
+        console.log('All data saved successfully');
+    } catch (error) {
+        console.error('Error saving all data:', error);
+        // При ошибке все равно пытаемся сохранить в localStorage
+        saveAllDataSync();
+    }
+}
+
+async function navigateTo(view) {
     appState.currentView = view;
+    await saveAllData();
     render();
 }
 
 async function init() {
     await loadData();
     
-    if (!appState.settings.isOnboarded) {
-        navigateTo('onboarding');
-    } else {
-        navigateTo('home');
+    // Восстанавливаем Pomodoro таймер, если он был активен
+    if (pomodoroTimeLeft > 0 && appState.activeTask) {
+        const task = appState.tasks.find(t => t.id === appState.activeTask.taskId);
+        if (task) {
+            startPomodoroTimer(true); // true = восстановление
+            if (appState.currentView !== 'pomodoro') {
+                appState.currentView = 'pomodoro';
+            }
+        } else {
+            // Задача была удалена, очищаем состояние
+            pomodoroTimeLeft = 0;
+            pomodoroIsPaused = false;
+            appState.activeTask = null;
+            await saveAllData();
+        }
     }
+    
+    if (!appState.settings.isOnboarded) {
+        appState.currentView = 'onboarding';
+    } else if (appState.currentView === 'loading') {
+        appState.currentView = 'home';
+    }
+    
+    render();
     
     if (WebApp.ready) {
         WebApp.ready();
@@ -103,6 +235,61 @@ async function init() {
     }
     
     sendTasksToBot();
+    
+    // Добавляем обработчики событий для сохранения при закрытии
+    setupAutoSave();
+}
+
+let autoSaveInterval = null;
+
+function setupAutoSave() {
+    // Сохраняем данные при закрытии окна/приложения
+    window.addEventListener('beforeunload', (e) => {
+        // Используем синхронное сохранение для beforeunload
+        saveAllDataSync();
+    });
+    
+    // Сохраняем данные при потере фокуса (когда приложение сворачивается)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            saveAllData();
+        }
+    });
+    
+    // Периодическое автосохранение каждые 30 секунд
+    autoSaveInterval = setInterval(() => {
+        saveAllData();
+    }, 30000);
+}
+
+function saveAllDataSync() {
+    try {
+        // Пытаемся сохранить синхронно через localStorage как fallback
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('focus_settings', JSON.stringify(appState.settings));
+            localStorage.setItem('focus_stats', JSON.stringify(appState.stats));
+            localStorage.setItem('focus_tasks', JSON.stringify(appState.tasks));
+            localStorage.setItem('focus_currentView', appState.currentView);
+            
+            if (appState.activeTask) {
+                localStorage.setItem('focus_activeTask', JSON.stringify(appState.activeTask));
+            }
+            
+            if (appState.activeTaskId) {
+                localStorage.setItem('focus_activeTaskId', appState.activeTaskId);
+            }
+            
+            const pomodoroState = {
+                isActive: pomodoroTimer !== null,
+                timeLeft: pomodoroTimeLeft,
+                isPaused: pomodoroIsPaused,
+                activeTask: appState.activeTask,
+            };
+            localStorage.setItem('focus_pomodoroState', JSON.stringify(pomodoroState));
+        }
+    } catch (error) {
+        console.error('Error in sync save:', error);
+    }
 }
 
 function sendTasksToBot() {
@@ -411,14 +598,19 @@ window.completeOnboarding = async function() {
 
 window.navigateTo = navigateTo;
 
-window.openTaskDetails = function(taskId) {
+window.openTaskDetails = async function(taskId) {
     appState.activeTaskId = taskId;
+    await saveAllData();
     navigateTo('task-details');
 };
 
-window.startPomodoro = function(taskId, subTaskId) {
+window.startPomodoro = async function(taskId, subTaskId) {
     appState.activeTask = { taskId, subTaskId };
     appState.activeTaskId = taskId;
+    // Сбрасываем время таймера при новом старте
+    pomodoroTimeLeft = appState.settings.pomodoroLength * 60;
+    pomodoroIsPaused = false;
+    await saveAllData();
     navigateTo('pomodoro');
     startPomodoroTimer();
 };
@@ -489,9 +681,14 @@ let pomodoroTimer = null;
 let pomodoroTimeLeft = 0;
 let pomodoroIsPaused = false;
 
-function startPomodoroTimer() {
-    pomodoroTimeLeft = appState.settings.pomodoroLength * 60;
-    pomodoroIsPaused = false;
+function startPomodoroTimer(restore = false) {
+    // Если время уже установлено (восстановление), используем его, иначе начинаем заново
+    if (!restore && pomodoroTimeLeft === 0) {
+        pomodoroTimeLeft = appState.settings.pomodoroLength * 60;
+        pomodoroIsPaused = false;
+    }
+    // При восстановлении не меняем pomodoroIsPaused - сохраняем состояние паузы
+    
     updateTimerDisplay();
     
     if (pomodoroTimer) {
@@ -503,11 +700,19 @@ function startPomodoroTimer() {
             pomodoroTimeLeft--;
             updateTimerDisplay();
             
+            // Сохраняем состояние таймера каждые 30 секунд
+            if (pomodoroTimeLeft % 30 === 0) {
+                saveAllData();
+            }
+            
             if (pomodoroTimeLeft <= 0) {
                 completePomodoro();
             }
         }
     }, 1000);
+    
+    // Сохраняем сразу при старте таймера
+    saveAllData();
 }
 
 function updateTimerDisplay() {
@@ -531,20 +736,25 @@ function updateTimerDisplay() {
     }
 }
 
-window.togglePause = function() {
+window.togglePause = async function() {
     pomodoroIsPaused = !pomodoroIsPaused;
     const btn = document.getElementById('pauseBtn');
     if (btn) {
         btn.textContent = pomodoroIsPaused ? '▶' : '⏸';
     }
+    await saveAllData();
 };
 
-window.cancelPomodoro = function() {
+window.cancelPomodoro = async function() {
     if (confirm('Отменить сессию? Прогресс не будет сохранен.')) {
         if (pomodoroTimer) {
             clearInterval(pomodoroTimer);
             pomodoroTimer = null;
         }
+        pomodoroTimeLeft = 0;
+        pomodoroIsPaused = false;
+        appState.activeTask = null;
+        await saveAllData();
         navigateTo('home');
     }
 };
@@ -591,6 +801,12 @@ async function completePomodoro() {
             sendTasksToBot();
         }
     }
+    
+    // Очищаем состояние Pomodoro
+    pomodoroTimeLeft = 0;
+    pomodoroIsPaused = false;
+    appState.activeTask = null;
+    await saveAllData();
     
     alert('🎉 Сессия завершена! Теперь отдохни ' + appState.settings.breakLength + ' минут!');
     navigateTo('home');
