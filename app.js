@@ -214,6 +214,7 @@ class FocusHelperApp {
         if (this.activeTask && this.activeTask.focusText) {
             this.lastPomodoroFocus = this.activeTask.focusText;
             localStorage.setItem('lastPomodoroFocus', this.lastPomodoroFocus);
+            console.log('Saved last pomodoro focus:', this.lastPomodoroFocus);
         }
         clearInterval(this.timerInterval);
         this.timerInterval = null;
@@ -270,13 +271,35 @@ class FocusHelperApp {
         // Приводим к строке для сравнения
         const idStr = String(taskId);
         const beforeCount = this.tasks.length;
-        console.log('deleteTask before filter:', { taskId: idStr, tasks: this.tasks.map(t => ({ id: t.id, title: t.title })) });
-        this.tasks = this.tasks.filter(t => String(t.id) !== idStr);
+        console.log('deleteTask before filter:', { taskId: idStr, tasks: this.tasks.map(t => ({ id: String(t.id), title: t.title })) });
+        
+        // Фильтруем задачи
+        const originalTasks = [...this.tasks];
+        this.tasks = this.tasks.filter(t => {
+            const taskIdStr = String(t.id);
+            const shouldKeep = taskIdStr !== idStr;
+            console.log('Filtering task:', { taskId: taskIdStr, shouldKeep, match: taskIdStr === idStr });
+            return shouldKeep;
+        });
+        
         const afterCount = this.tasks.length;
-        console.log('deleteTask after filter:', { taskId: idStr, beforeCount, afterCount, deleted: beforeCount > afterCount, remainingTasks: this.tasks.map(t => ({ id: t.id, title: t.title })) });
+        console.log('deleteTask after filter:', { 
+            taskId: idStr, 
+            beforeCount, 
+            afterCount, 
+            deleted: beforeCount > afterCount,
+            originalTasks: originalTasks.map(t => String(t.id)),
+            remainingTasks: this.tasks.map(t => String(t.id))
+        });
         
         if (beforeCount === afterCount) {
-            console.error('deleteTask: Task was not deleted!', { taskId: idStr, allTaskIds: this.tasks.map(t => String(t.id)) });
+            console.error('deleteTask: Task was not deleted!', { 
+                taskId: idStr, 
+                allTaskIds: this.tasks.map(t => String(t.id)),
+                originalTaskIds: originalTasks.map(t => String(t.id))
+            });
+            alert('Ошибка: задача не была удалена. Проверьте консоль для деталей.');
+            return;
         }
         
         this.saveTasks(this.tasks);
@@ -787,6 +810,18 @@ class FocusHelperApp {
                 achievements: []
             };
         }
+        
+        // Загружаем статистику из localStorage если нужно
+        const savedStats = localStorage.getItem('focus_stats');
+        if (savedStats) {
+            try {
+                const parsed = JSON.parse(savedStats);
+                this.stats = { ...this.stats, ...parsed };
+            } catch (e) {
+                console.error('Error parsing stats:', e);
+            }
+        }
+        
         const hours = Math.floor(this.stats.totalFocusTime / 60);
         const minutes = this.stats.totalFocusTime % 60;
         const levelProgress = this.stats.xp % 100;
@@ -917,6 +952,16 @@ class FocusHelperApp {
         
         // Создаем новый обработчик
         this.clickHandler = (e) => {
+            // Игнорируем клики на input элементы (включая календарь)
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                return;
+            }
+            
+            // Игнорируем клики внутри модальных окон
+            if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal')) {
+                return;
+            }
+            
             // Сначала проверяем, кликнули ли на элемент навигации или иконку
             let actionElement = null;
             
@@ -1013,7 +1058,14 @@ class FocusHelperApp {
                         taskId = parentWithId.dataset.id;
                     }
                 }
-                console.log('deleteTask clicked:', taskId, actionElement, actionElement.dataset);
+                // Также проверяем, может быть кликнули на emoji внутри кнопки
+                if (!taskId && e.target.parentElement) {
+                    const parent = e.target.parentElement;
+                    if (parent.dataset && parent.dataset.id) {
+                        taskId = parent.dataset.id;
+                    }
+                }
+                console.log('deleteTask clicked:', taskId, actionElement, actionElement.dataset, 'target:', e.target);
                 if (taskId) {
                     if (confirm('Удалить задачу?')) {
                         console.log('Calling deleteTask with:', taskId);
@@ -1023,8 +1075,11 @@ class FocusHelperApp {
                     console.error('deleteTask: taskId not found', {
                         actionElement,
                         dataset: actionElement.dataset,
+                        target: e.target,
+                        targetParent: e.target.parentElement,
                         allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
                     });
+                    alert('Ошибка: не удалось найти ID задачи для удаления. Проверьте консоль.');
                 }
             } else if (action === 'startPomodoro') {
                 const taskId = actionElement.dataset.task;
