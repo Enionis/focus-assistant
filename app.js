@@ -9,6 +9,7 @@ class FocusHelperApp {
         this.isRunning = false;
         this.isPaused = false;
         this.activeTask = null;
+        this.selectedTaskId = null; // Для просмотра задачи
         this.settings = {
             dailyHours: 4,
             productiveTime: 'morning',
@@ -285,8 +286,8 @@ class FocusHelperApp {
                         </div>
                     </div>
                     <div class="flex gap-8">
-                        <button class="icon-btn" data-action="viewTask" data-id="${task.id}">👁️</button>
-                        <button class="icon-btn" data-action="deleteTask" data-id="${task.id}">🗑️</button>
+                        <button class="icon-btn" data-action="viewTask" data-id="${task.id}" title="Просмотр">👁️</button>
+                        <button class="icon-btn" data-action="deleteTask" data-id="${task.id}" title="Удалить">🗑️</button>
                     </div>
                 </div>
                 <div class="progress-bar" style="margin-top: 12px;">
@@ -299,7 +300,7 @@ class FocusHelperApp {
             <div class="app-container">
                 <div class="container">
                     <h1 class="title">Твои задачи</h1>
-                    <button class="btn primary" data-action="createTask">+ Создать задачу</button>
+                    <button class="btn primary" data-action="createTask" style="margin-bottom: 16px;">+ Создать задачу</button>
                     <div class="task-list">${taskList || '<p class="caption">Нет задач. Создай первую!</p>'}</div>
                 </div>
                 ${this.renderNavigation()}
@@ -339,7 +340,7 @@ class FocusHelperApp {
                         <div class="task-item-title">${st.title}</div>
                         <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий</div>
                     </div>
-                    <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
+                    <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать Pomodoro</button>
                 </div>
                 ${st.completedPomodoros > 0 ? `
                     <div class="progress-bar" style="margin-top: 12px;">
@@ -511,7 +512,7 @@ class FocusHelperApp {
                 content = this.renderCreateTask();
                 break;
             case 'taskDetails':
-                const taskId = this.activeTask?.taskId || ''; // Для деталей
+                const taskId = this.selectedTaskId || ''; // Для деталей
                 content = this.renderTaskDetails(taskId);
                 break;
             case 'pomodoro':
@@ -555,18 +556,22 @@ class FocusHelperApp {
     // Слушатели событий
     attachEventListeners() {
         document.addEventListener('click', (e) => {
-            const action = e.target.dataset.action;
+            // Проверяем, есть ли action на самом элементе или на родителе
+            const action = e.target.dataset.action || e.target.closest('[data-action]')?.dataset.action;
             if (!action) return;
+            
+            // Получаем элемент с data-action для получения других data-атрибутов
+            const actionElement = e.target.dataset.action ? e.target : e.target.closest('[data-action]');
 
             // Обработка действий
             if (action === 'navigate') {
-                this.navigateTo(e.target.dataset.view);
+                this.navigateTo(actionElement.dataset.view);
             } else if (action === 'setDailyHours') {
-                this.settings.dailyHours = parseInt(e.target.dataset.value);
+                this.settings.dailyHours = parseInt(actionElement.dataset.value);
             } else if (action === 'setProductiveTime') {
-                this.settings.productiveTime = e.target.dataset.value;
+                this.settings.productiveTime = actionElement.dataset.value;
             } else if (action === 'setPomodoro') {
-                const value = parseInt(e.target.dataset.value);
+                const value = parseInt(actionElement.dataset.value);
                 this.settings.pomodoroLength = value;
                 this.settings.breakLength = value / 5;
             } else if (action === 'completeOnboarding') {
@@ -574,8 +579,8 @@ class FocusHelperApp {
             } else if (action === 'createTask') {
                 this.navigateTo('createTask');
             } else if (action === 'analyzeTask') {
-                const desc = document.getElementById('taskDescription').value;
-                const dl = document.getElementById('deadline').value;
+                const desc = document.getElementById('taskDescription')?.value;
+                const dl = document.getElementById('deadline')?.value;
                 if (desc) {
                     this.createTask(desc, dl); // Заглушка создаст план
                     alert('AI-анализ (заглушка): План создан с базовыми шагами!');
@@ -584,26 +589,44 @@ class FocusHelperApp {
                 // Уже сохранено в createTask
                 this.navigateTo('home');
             } else if (action === 'viewTask') {
+                this.selectedTaskId = actionElement.dataset.id;
                 this.navigateTo('taskDetails');
             } else if (action === 'deleteTask') {
-                if (confirm('Удалить задачу?')) {
-                    this.deleteTask(e.target.dataset.id);
+                const taskId = actionElement.dataset.id;
+                if (taskId && confirm('Удалить задачу?')) {
+                    this.deleteTask(taskId);
                 }
             } else if (action === 'startPomodoro') {
-                this.startPomodoro(e.target.dataset.task, e.target.dataset.subtask);
+                const taskId = actionElement.dataset.task;
+                const subTaskId = parseInt(actionElement.dataset.subtask);
+                if (taskId && subTaskId) {
+                    this.startPomodoro(taskId, subTaskId);
+                }
             } else if (action === 'pausePomodoro') {
                 this.pausePomodoro();
+                this.renderApp(); // Обновить только для pomodoro
+                return; // Не вызывать renderApp() еще раз
             } else if (action === 'cancelPomodoro') {
                 this.cancelPomodoro();
+                // cancelPomodoro уже вызывает navigateTo, который вызывает renderApp
+                return;
             } else if (action === 'startQuickPomodoro') {
                 const quickTask = prompt('Быстрая сессия: опиши задачу');
                 if (quickTask) {
-                    this.createTask(quickTask); // Создать простую задачу
-                    this.startPomodoro(this.tasks[this.tasks.length - 1].id, this.tasks[this.tasks.length - 1].subTasks[0].id);
+                    this.createTask(quickTask).then(() => {
+                        const lastTask = this.tasks[this.tasks.length - 1];
+                        if (lastTask && lastTask.subTasks.length > 0) {
+                            this.startPomodoro(lastTask.id, lastTask.subTasks[0].id);
+                        }
+                    });
                 }
+                return; // Не вызывать renderApp() сразу, так как createTask асинхронный
             }
 
-            this.renderApp();
+            // Для большинства действий обновляем интерфейс
+            if (action !== 'pausePomodoro' && action !== 'cancelPomodoro' && action !== 'startQuickPomodoro') {
+                this.renderApp();
+            }
         });
     }
 

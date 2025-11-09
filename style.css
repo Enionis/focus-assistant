@@ -178,6 +178,12 @@ body {
     border: 1px solid var(--border);
 }
 
+.btn.tertiary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
 .btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
@@ -202,6 +208,8 @@ body {
 
 /* Списки задач из RN */
 .task-list {
+    display: flex;
+    flex-direction: column;
     gap: 12px;
 }
 
@@ -210,6 +218,7 @@ body {
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px;
+    margin-bottom: 12px;
 }
 
 .task-item-header {
