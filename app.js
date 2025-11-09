@@ -10,6 +10,7 @@ class FocusHelperApp {
         this.isPaused = false;
         this.activeTask = null;
         this.selectedTaskId = null; // Для просмотра задачи
+        this.lastPomodoroFocus = null; // Последняя тема pomodoro
         this.settings = {
             dailyHours: 4,
             productiveTime: 'morning',
@@ -33,6 +34,8 @@ class FocusHelperApp {
     // Инициализация
     init() {
         this.loadData();
+        // Загружаем последнюю тему pomodoro
+        this.lastPomodoroFocus = localStorage.getItem('lastPomodoroFocus') || null;
         this.attachEventListeners();
         this.renderApp();
     }
@@ -116,7 +119,7 @@ class FocusHelperApp {
     }
 
     // Создание задачи (заглушка без AI)
-    async createTask(taskDescription, deadline = '') {
+    async createTask(taskDescription, deadline = null) {
         // Заглушка: hardcoded план на основе описания
         let subTasks = [];
         if (taskDescription.includes('экзамен') || taskDescription.includes('курсовая')) {
@@ -135,10 +138,26 @@ class FocusHelperApp {
             ];
         }
 
+        // Обрабатываем дедлайн: если это строка даты, конвертируем в ISO формат
+        let deadlineDate = undefined;
+        if (deadline) {
+            if (typeof deadline === 'string' && deadline.trim()) {
+                // Если это дата в формате YYYY-MM-DD, конвертируем в ISO
+                const date = new Date(deadline);
+                if (!isNaN(date.getTime())) {
+                    deadlineDate = date.toISOString();
+                } else {
+                    deadlineDate = deadline;
+                }
+            } else {
+                deadlineDate = deadline;
+            }
+        }
+        
         const task = {
             id: Date.now().toString(),
             title: taskDescription,
-            deadline: deadline || undefined,
+            deadline: deadlineDate,
             subTasks,
             createdAt: new Date().toISOString(),
             totalPomodoros: subTasks.reduce((sum, st) => sum + st.estimatedPomodoros, 0),
@@ -191,6 +210,11 @@ class FocusHelperApp {
     }
 
     cancelPomodoro() {
+        // Сохраняем последнюю тему pomodoro перед выходом
+        if (this.activeTask && this.activeTask.focusText) {
+            this.lastPomodoroFocus = this.activeTask.focusText;
+            localStorage.setItem('lastPomodoroFocus', this.lastPomodoroFocus);
+        }
         clearInterval(this.timerInterval);
         this.timerInterval = null;
         this.isRunning = false;
@@ -318,7 +342,7 @@ class FocusHelperApp {
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">На что фокус?</h2>
             <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
-            <input type="text" id="focusInput" placeholder="Например: Изучить новую тему" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
+            <input type="text" id="focusInput" value="${this.lastPomodoroFocus || ''}" placeholder="Например: Изучить новую тему" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
             <div style="display: flex; gap: 12px;">
                 <button class="btn primary" id="startFocusPomodoro" style="flex: 1;">Начать Pomodoro</button>
                 <button class="btn secondary" id="cancelFocusInput" style="flex: 1;">Отмена</button>
@@ -348,6 +372,10 @@ class FocusHelperApp {
                 alert('Пожалуйста, введите задачу для фокуса');
                 return;
             }
+            
+            // Сохраняем последнюю тему
+            this.lastPomodoroFocus = focusText;
+            localStorage.setItem('lastPomodoroFocus', focusText);
             
             // Создаем временную задачу или используем существующую
             if (this.tasks.length > 0) {
@@ -576,6 +604,10 @@ class FocusHelperApp {
     }
 
     renderCreateTask() {
+        // Получаем сегодняшнюю дату в формате YYYY-MM-DD для минимального значения
+        const today = new Date();
+        const minDate = today.toISOString().split('T')[0];
+        
         return `
             <div class="app-container">
                 <div class="container">
@@ -584,7 +616,7 @@ class FocusHelperApp {
                         <label class="label">Опиши задачу</label>
                         <textarea class="input text-area" id="taskDescription" placeholder="Например: Подготовиться к экзамену"></textarea>
                         <label class="label">Дедлайн (опционально)</label>
-                        <input class="input" id="deadline" placeholder="Через неделю">
+                        <input type="date" class="input" id="deadline" min="${minDate}" style="font-size: 16px;">
                         <button class="btn primary" data-action="analyzeTask">Разобрать с AI (заглушка)</button>
                         <div id="generatedPlan"></div>
                         <button class="btn primary" id="saveTask" style="display: none;" data-action="saveTask">Сохранить план</button>
@@ -627,10 +659,12 @@ class FocusHelperApp {
             <div class="app-container">
                 <div class="container">
                     <div class="flex between center" style="margin-bottom: 16px;">
-                        <h1 class="title">${task.title}</h1>
-                        <button class="btn tertiary" data-action="navigate" data-view="home">Назад</button>
+                        <div style="flex: 1;">
+                            <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto; margin-bottom: 8px;">← Назад</button>
+                            <h1 class="title" style="margin-bottom: 0;">${task.title}</h1>
+                        </div>
                     </div>
-                    ${task.deadline ? `<p class="subtitle">📅 Дедлайн: ${new Date(task.deadline).toLocaleDateString('ru-RU')}</p>` : ''}
+                    ${task.deadline ? `<p class="subtitle" style="margin-top: 8px;">📅 Дедлайн: ${new Date(task.deadline).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>` : ''}
                     <div class="panel">
                         <div class="flex between center" style="margin-bottom: 12px;">
                             <div class="body">Прогресс</div>
@@ -741,6 +775,18 @@ class FocusHelperApp {
     }
 
     renderStatistics() {
+        // Убеждаемся, что статистика загружена
+        if (!this.stats) {
+            this.stats = {
+                totalSessions: 0,
+                totalFocusTime: 0,
+                currentStreak: 0,
+                longestStreak: 0,
+                level: 1,
+                xp: 0,
+                achievements: []
+            };
+        }
         const hours = Math.floor(this.stats.totalFocusTime / 60);
         const minutes = this.stats.totalFocusTime % 60;
         const levelProgress = this.stats.xp % 100;
@@ -940,7 +986,8 @@ class FocusHelperApp {
                 this.navigateTo('createTask');
             } else if (action === 'analyzeTask') {
                 const desc = document.getElementById('taskDescription')?.value;
-                const dl = document.getElementById('deadline')?.value;
+                const deadlineInput = document.getElementById('deadline');
+                const dl = deadlineInput?.value || null;
                 if (desc) {
                     this.createTask(desc, dl); // Заглушка создаст план
                     alert('AI-анализ (заглушка): План создан с базовыми шагами!');
@@ -957,14 +1004,27 @@ class FocusHelperApp {
             } else if (action === 'deleteTask') {
                 e.preventDefault();
                 e.stopPropagation();
-                const taskId = actionElement.dataset.id;
-                console.log('deleteTask clicked:', taskId, actionElement);
+                // Пробуем получить ID из разных источников
+                let taskId = actionElement.dataset.id;
+                if (!taskId) {
+                    // Если не нашли, ищем в родительском элементе
+                    const parentWithId = actionElement.closest('[data-id]');
+                    if (parentWithId) {
+                        taskId = parentWithId.dataset.id;
+                    }
+                }
+                console.log('deleteTask clicked:', taskId, actionElement, actionElement.dataset);
                 if (taskId) {
                     if (confirm('Удалить задачу?')) {
+                        console.log('Calling deleteTask with:', taskId);
                         this.deleteTask(taskId);
                     }
                 } else {
-                    console.error('deleteTask: taskId not found in dataset', actionElement.dataset);
+                    console.error('deleteTask: taskId not found', {
+                        actionElement,
+                        dataset: actionElement.dataset,
+                        allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
+                    });
                 }
             } else if (action === 'startPomodoro') {
                 const taskId = actionElement.dataset.task;
