@@ -147,8 +147,10 @@ class FocusHelperApp {
 
         this.tasks.push(task);
         this.saveTasks(this.tasks);
-        this.navigateTo('home');
         await this.syncWithBot();
+        // Открываем созданную задачу
+        this.selectedTaskId = task.id;
+        this.navigateTo('taskDetails');
     }
 
     // Pomodoro логика
@@ -229,13 +231,47 @@ class FocusHelperApp {
 
     // Удаление задачи
     deleteTask(taskId) {
-        if (!taskId) return;
+        if (!taskId) {
+            console.error('deleteTask: taskId is missing');
+            return;
+        }
         // Приводим к строке для сравнения
         const idStr = String(taskId);
+        const beforeCount = this.tasks.length;
         this.tasks = this.tasks.filter(t => String(t.id) !== idStr);
+        const afterCount = this.tasks.length;
+        console.log('deleteTask:', { taskId: idStr, beforeCount, afterCount, deleted: beforeCount > afterCount });
         this.saveTasks(this.tasks);
         this.syncWithBot();
         this.renderApp();
+    }
+
+    // Редактирование подзадачи
+    editSubTask(taskId, subTaskId) {
+        const task = this.tasks.find(t => String(t.id) === String(taskId));
+        if (!task) return;
+        
+        const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
+        if (!subTask) return;
+
+        const newTitle = prompt('Новое название подзадачи:', subTask.title);
+        if (newTitle && newTitle.trim()) {
+            subTask.title = newTitle.trim();
+            this.saveTasks(this.tasks);
+            this.syncWithBot();
+            this.renderApp();
+        }
+
+        const newPomodoros = prompt('Количество pomodoro сессий:', subTask.estimatedPomodoros);
+        if (newPomodoros && !isNaN(newPomodoros) && parseInt(newPomodoros) > 0) {
+            const oldPomodoros = subTask.estimatedPomodoros;
+            subTask.estimatedPomodoros = parseInt(newPomodoros);
+            // Пересчитываем общее количество pomodoros для задачи
+            task.totalPomodoros = task.totalPomodoros - oldPomodoros + subTask.estimatedPomodoros;
+            this.saveTasks(this.tasks);
+            this.syncWithBot();
+            this.renderApp();
+        }
     }
 
     // Рендер экранов
@@ -343,14 +379,19 @@ class FocusHelperApp {
         if (!task) return this.renderHome();
 
         const subTasksList = task.subTasks.map((st, index) => `
-            <div class="task-item">
+            <div class="task-item" data-subtask-id="${st.id}">
                 <div class="task-item-header">
-                    <div class="task-item-number">${index + 1}</div>
-                    <div class="task-item-content">
-                        <div class="task-item-title">${st.title}</div>
-                        <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий</div>
+                    <div class="flex center" style="flex: 1;">
+                        <div class="task-item-number">${index + 1}</div>
+                        <div class="task-item-content" style="flex: 1;">
+                            <div class="task-item-title editable-title" data-editable="true" data-subtask-id="${st.id}">${st.title}</div>
+                            <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий</div>
+                        </div>
                     </div>
-                    <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать Pomodoro</button>
+                    <div class="flex gap-8">
+                        <button class="icon-btn" data-action="editSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Редактировать">✏️</button>
+                        <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
+                    </div>
                 </div>
                 ${st.completedPomodoros > 0 ? `
                     <div class="progress-bar" style="margin-top: 12px;">
@@ -579,19 +620,38 @@ class FocusHelperApp {
         
         // Создаем новый обработчик
         this.clickHandler = (e) => {
-            // Находим ближайший элемент с data-action (работает даже если кликнули на вложенный элемент)
-            const actionElement = e.target.closest('[data-action]');
+            // Сначала проверяем, кликнули ли на элемент навигации или иконку
+            let actionElement = null;
+            
+            // Проверяем навигационные кнопки
+            const navItem = e.target.closest('.nav-item');
+            if (navItem && navItem.dataset.action) {
+                actionElement = navItem;
+            }
+            
+            // Проверяем иконки кнопок
+            const iconBtn = e.target.closest('.icon-btn');
+            if (iconBtn && iconBtn.dataset.action) {
+                actionElement = iconBtn;
+            }
+            
+            // Если не нашли, ищем любой элемент с data-action
+            if (!actionElement) {
+                actionElement = e.target.closest('[data-action]');
+            }
+            
             if (!actionElement) return;
             
             const action = actionElement.dataset.action;
             if (!action) return;
 
             // Отладка (можно убрать позже)
-            console.log('Action clicked:', action, actionElement.dataset);
+            console.log('Action clicked:', action, actionElement.dataset, e.target);
 
             // Предотвращаем стандартное поведение для кнопок
-            if (actionElement.tagName === 'BUTTON' || actionElement.tagName === 'A') {
+            if (actionElement.tagName === 'BUTTON' || actionElement.tagName === 'A' || actionElement.closest('button')) {
                 e.preventDefault();
+                e.stopPropagation();
             }
 
             // Обработка действий
@@ -647,6 +707,7 @@ class FocusHelperApp {
                 // cancelPomodoro уже вызывает navigateTo, который вызывает renderApp
             } else if (action === 'startQuickPomodoro') {
                 e.preventDefault();
+                e.stopPropagation();
                 const quickTask = prompt('Быстрая сессия: опиши задачу');
                 if (quickTask) {
                     this.createTask(quickTask).then(() => {
@@ -655,6 +716,24 @@ class FocusHelperApp {
                             this.startPomodoro(lastTask.id, lastTask.subTasks[0].id);
                         }
                     });
+                }
+            } else if (action === 'editSubTask') {
+                const taskId = actionElement.dataset.taskId;
+                const subTaskId = parseInt(actionElement.dataset.subtaskId);
+                if (taskId && subTaskId) {
+                    this.editSubTask(taskId, subTaskId);
+                }
+            }
+            
+            // Обработка клика на редактируемое название подзадачи
+            if (e.target.classList.contains('editable-title') && e.target.dataset.subtaskId) {
+                const taskItem = e.target.closest('.task-item');
+                if (taskItem) {
+                    const taskId = this.selectedTaskId;
+                    const subTaskId = parseInt(e.target.dataset.subtaskId);
+                    if (taskId && subTaskId) {
+                        this.editSubTask(taskId, subTaskId);
+                    }
                 }
             }
         };
