@@ -798,6 +798,20 @@ class FocusHelperApp {
     }
 
     renderStatistics() {
+        console.log('renderStatistics called, current stats:', this.stats);
+        
+        // Загружаем статистику из localStorage если нужно
+        const savedStats = localStorage.getItem('focus_stats');
+        if (savedStats) {
+            try {
+                const parsed = JSON.parse(savedStats);
+                console.log('Loaded stats from localStorage:', parsed);
+                this.stats = { ...this.stats, ...parsed };
+            } catch (e) {
+                console.error('Error parsing stats:', e);
+            }
+        }
+        
         // Убеждаемся, что статистика загружена
         if (!this.stats) {
             this.stats = {
@@ -811,16 +825,7 @@ class FocusHelperApp {
             };
         }
         
-        // Загружаем статистику из localStorage если нужно
-        const savedStats = localStorage.getItem('focus_stats');
-        if (savedStats) {
-            try {
-                const parsed = JSON.parse(savedStats);
-                this.stats = { ...this.stats, ...parsed };
-            } catch (e) {
-                console.error('Error parsing stats:', e);
-            }
-        }
+        console.log('Using stats for render:', this.stats);
         
         const hours = Math.floor(this.stats.totalFocusTime / 60);
         const minutes = this.stats.totalFocusTime % 60;
@@ -965,22 +970,29 @@ class FocusHelperApp {
             // Сначала проверяем, кликнули ли на элемент навигации или иконку
             let actionElement = null;
             
-            // Проверяем навигационные кнопки (приоритет)
+            // Проверяем навигационные кнопки (приоритет) - даже если кликнули на span внутри
             const navItem = e.target.closest('.nav-item');
-            if (navItem && navItem.dataset && navItem.dataset.action) {
-                actionElement = navItem;
+            if (navItem) {
+                // Проверяем, есть ли data-action на самой кнопке
+                if (navItem.dataset && navItem.dataset.action) {
+                    actionElement = navItem;
+                }
             }
             
             // Проверяем иконки кнопок (приоритет)
-            const iconBtn = e.target.closest('.icon-btn');
-            if (iconBtn && iconBtn.dataset && iconBtn.dataset.action) {
-                actionElement = iconBtn;
+            if (!actionElement) {
+                const iconBtn = e.target.closest('.icon-btn');
+                if (iconBtn && iconBtn.dataset && iconBtn.dataset.action) {
+                    actionElement = iconBtn;
+                }
             }
             
             // Проверяем обычные кнопки
-            const button = e.target.closest('button[data-action]');
-            if (button && button.dataset && button.dataset.action) {
-                actionElement = button;
+            if (!actionElement) {
+                const button = e.target.closest('button[data-action]');
+                if (button && button.dataset && button.dataset.action) {
+                    actionElement = button;
+                }
             }
             
             // Если не нашли, ищем любой элемент с data-action
@@ -996,8 +1008,8 @@ class FocusHelperApp {
                 return;
             }
 
-            // Отладка (можно убрать позже)
-            console.log('Action clicked:', action, actionElement.dataset, e.target);
+            // Отладка
+            console.log('Action clicked:', action, actionElement.dataset, 'target:', e.target.tagName, e.target.className);
 
             // Предотвращаем стандартное поведение для кнопок
             if (actionElement.tagName === 'BUTTON' || actionElement.tagName === 'A' || actionElement.closest('button')) {
@@ -1010,12 +1022,16 @@ class FocusHelperApp {
                 e.preventDefault();
                 e.stopPropagation();
                 const view = actionElement.dataset.view;
-                console.log('navigate clicked:', view, actionElement, actionElement.dataset);
+                console.log('navigate clicked:', view, 'element:', actionElement, 'dataset:', actionElement.dataset);
                 if (view) {
                     console.log('Navigating to:', view);
                     this.navigateTo(view);
                 } else {
-                    console.error('navigate: view is missing', actionElement.dataset);
+                    console.error('navigate: view is missing', {
+                        actionElement,
+                        dataset: actionElement.dataset,
+                        allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
+                    });
                 }
             } else if (action === 'setDailyHours') {
                 this.settings.dailyHours = parseInt(actionElement.dataset.value);
@@ -1050,22 +1066,42 @@ class FocusHelperApp {
                 e.preventDefault();
                 e.stopPropagation();
                 // Пробуем получить ID из разных источников
-                let taskId = actionElement.dataset.id;
+                let taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
+                
+                // Если не нашли, ищем в родительском элементе
                 if (!taskId) {
-                    // Если не нашли, ищем в родительском элементе
                     const parentWithId = actionElement.closest('[data-id]');
                     if (parentWithId) {
-                        taskId = parentWithId.dataset.id;
+                        taskId = parentWithId.getAttribute('data-id') || parentWithId.dataset.id;
                     }
                 }
-                // Также проверяем, может быть кликнули на emoji внутри кнопки
-                if (!taskId && e.target.parentElement) {
-                    const parent = e.target.parentElement;
-                    if (parent.dataset && parent.dataset.id) {
-                        taskId = parent.dataset.id;
+                
+                // Также проверяем, может быть кликнули на emoji или текст внутри кнопки
+                if (!taskId) {
+                    let current = e.target;
+                    for (let i = 0; i < 5 && current; i++) {
+                        if (current.dataset && current.dataset.id) {
+                            taskId = current.dataset.id;
+                            break;
+                        }
+                        if (current.getAttribute && current.getAttribute('data-id')) {
+                            taskId = current.getAttribute('data-id');
+                            break;
+                        }
+                        current = current.parentElement;
                     }
                 }
-                console.log('deleteTask clicked:', taskId, actionElement, actionElement.dataset, 'target:', e.target);
+                
+                console.log('deleteTask clicked:', {
+                    taskId,
+                    actionElement,
+                    actionElementDataset: actionElement.dataset,
+                    actionElementAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value })),
+                    target: e.target,
+                    targetTag: e.target.tagName,
+                    targetClass: e.target.className
+                });
+                
                 if (taskId) {
                     if (confirm('Удалить задачу?')) {
                         console.log('Calling deleteTask with:', taskId);
@@ -1144,4 +1180,5 @@ class FocusHelperApp {
 
 // Инициализация
 const app = new FocusHelperApp();
+window.app = app;
 window.app = app;
