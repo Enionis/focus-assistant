@@ -967,80 +967,65 @@ class FocusHelperApp {
                 return;
             }
             
-            // Сначала проверяем, кликнули ли на элемент навигации или иконку
+            // Находим элемент с data-action, начиная с целевого элемента и поднимаясь вверх
             let actionElement = null;
+            let current = e.target;
             
-            // Проверяем навигационные кнопки (приоритет) - даже если кликнули на span внутри
-            const navItem = e.target.closest('.nav-item');
-            if (navItem) {
-                // Проверяем, есть ли data-action на самой кнопке
-                if (navItem.dataset && navItem.dataset.action) {
-                    actionElement = navItem;
+            // Поднимаемся по DOM дереву, ища элемент с data-action
+            while (current && current !== document.body) {
+                // Проверяем, есть ли data-action атрибут
+                if (current.hasAttribute && current.hasAttribute('data-action')) {
+                    actionElement = current;
+                    break;
                 }
-            }
-            
-            // Проверяем иконки кнопок (приоритет)
-            if (!actionElement) {
-                const iconBtn = e.target.closest('.icon-btn');
-                if (iconBtn && iconBtn.dataset && iconBtn.dataset.action) {
-                    actionElement = iconBtn;
+                // Также проверяем через dataset
+                if (current.dataset && current.dataset.action) {
+                    actionElement = current;
+                    break;
                 }
+                current = current.parentElement;
             }
             
-            // Проверяем обычные кнопки
             if (!actionElement) {
-                const button = e.target.closest('button[data-action]');
-                if (button && button.dataset && button.dataset.action) {
-                    actionElement = button;
-                }
+                return;
             }
             
-            // Если не нашли, ищем любой элемент с data-action
-            if (!actionElement) {
-                actionElement = e.target.closest('[data-action]');
-            }
-            
-            if (!actionElement) return;
-            
-            const action = actionElement.dataset.action;
+            // Получаем action из атрибута или dataset
+            const action = actionElement.getAttribute('data-action') || actionElement.dataset.action;
             if (!action) {
-                console.log('No action found on element:', actionElement, actionElement.dataset);
                 return;
             }
 
             // Отладка
-            console.log('Action clicked:', action, actionElement.dataset, 'target:', e.target.tagName, e.target.className);
+            console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target);
 
-            // Предотвращаем стандартное поведение для кнопок
-            if (actionElement.tagName === 'BUTTON' || actionElement.tagName === 'A' || actionElement.closest('button')) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
+            // Предотвращаем стандартное поведение
+            e.preventDefault();
+            e.stopPropagation();
 
             // Обработка действий
             if (action === 'navigate') {
-                e.preventDefault();
-                e.stopPropagation();
-                const view = actionElement.dataset.view;
-                console.log('navigate clicked:', view, 'element:', actionElement, 'dataset:', actionElement.dataset);
+                const view = actionElement.getAttribute('data-view') || actionElement.dataset.view;
+                console.log('navigate clicked:', view, 'element:', actionElement);
                 if (view) {
                     console.log('Navigating to:', view);
                     this.navigateTo(view);
                 } else {
                     console.error('navigate: view is missing', {
                         actionElement,
-                        dataset: actionElement.dataset,
                         allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
                     });
                 }
             } else if (action === 'setDailyHours') {
-                this.settings.dailyHours = parseInt(actionElement.dataset.value);
+                const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
+                this.settings.dailyHours = parseInt(value);
             } else if (action === 'setProductiveTime') {
-                this.settings.productiveTime = actionElement.dataset.value;
+                const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
+                this.settings.productiveTime = value;
             } else if (action === 'setPomodoro') {
-                const value = parseInt(actionElement.dataset.value);
-                this.settings.pomodoroLength = value;
-                this.settings.breakLength = value / 5;
+                const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
+                this.settings.pomodoroLength = parseInt(value);
+                this.settings.breakLength = parseInt(value) / 5;
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
             } else if (action === 'createTask') {
@@ -1057,35 +1042,25 @@ class FocusHelperApp {
                 // Уже сохранено в createTask
                 this.navigateTo('home');
             } else if (action === 'viewTask') {
-                const taskId = actionElement.dataset.id;
+                const taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
                 if (taskId) {
                     this.selectedTaskId = taskId;
                     this.navigateTo('taskDetails');
                 }
             } else if (action === 'deleteTask') {
-                e.preventDefault();
-                e.stopPropagation();
-                // Пробуем получить ID из разных источников
+                // Получаем ID из атрибута или dataset
                 let taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
                 
-                // Если не нашли, ищем в родительском элементе
+                // Если не нашли, ищем в родительских элементах
                 if (!taskId) {
-                    const parentWithId = actionElement.closest('[data-id]');
-                    if (parentWithId) {
-                        taskId = parentWithId.getAttribute('data-id') || parentWithId.dataset.id;
-                    }
-                }
-                
-                // Также проверяем, может быть кликнули на emoji или текст внутри кнопки
-                if (!taskId) {
-                    let current = e.target;
+                    let current = actionElement;
                     for (let i = 0; i < 5 && current; i++) {
-                        if (current.dataset && current.dataset.id) {
-                            taskId = current.dataset.id;
+                        if (current.hasAttribute && current.hasAttribute('data-id')) {
+                            taskId = current.getAttribute('data-id');
                             break;
                         }
-                        if (current.getAttribute && current.getAttribute('data-id')) {
-                            taskId = current.getAttribute('data-id');
+                        if (current.dataset && current.dataset.id) {
+                            taskId = current.dataset.id;
                             break;
                         }
                         current = current.parentElement;
@@ -1095,11 +1070,7 @@ class FocusHelperApp {
                 console.log('deleteTask clicked:', {
                     taskId,
                     actionElement,
-                    actionElementDataset: actionElement.dataset,
-                    actionElementAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value })),
-                    target: e.target,
-                    targetTag: e.target.tagName,
-                    targetClass: e.target.className
+                    target: e.target
                 });
                 
                 if (taskId) {
@@ -1110,16 +1081,13 @@ class FocusHelperApp {
                 } else {
                     console.error('deleteTask: taskId not found', {
                         actionElement,
-                        dataset: actionElement.dataset,
-                        target: e.target,
-                        targetParent: e.target.parentElement,
                         allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
                     });
                     alert('Ошибка: не удалось найти ID задачи для удаления. Проверьте консоль.');
                 }
             } else if (action === 'startPomodoro') {
-                const taskId = actionElement.dataset.task;
-                const subTaskId = parseInt(actionElement.dataset.subtask);
+                const taskId = actionElement.getAttribute('data-task') || actionElement.dataset.task;
+                const subTaskId = parseInt(actionElement.getAttribute('data-subtask') || actionElement.dataset.subtask);
                 if (taskId && subTaskId && !isNaN(subTaskId)) {
                     this.startPomodoro(taskId, subTaskId);
                 }
@@ -1130,25 +1098,19 @@ class FocusHelperApp {
                 this.cancelPomodoro();
                 // cancelPomodoro уже вызывает navigateTo, который вызывает renderApp
             } else if (action === 'startQuickPomodoro') {
-                e.preventDefault();
-                e.stopPropagation();
                 console.log('startQuickPomodoro clicked');
                 this.showFocusInputModal();
             } else if (action === 'startTimer') {
-                e.preventDefault();
-                e.stopPropagation();
                 this.startTimer();
             } else if (action === 'editSubTask') {
-                const taskId = actionElement.dataset.taskId;
-                const subTaskId = parseInt(actionElement.dataset.subtaskId);
+                const taskId = actionElement.getAttribute('data-task-id') || actionElement.dataset.taskId;
+                const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId);
                 if (taskId && subTaskId) {
                     this.editSubTask(taskId, subTaskId);
                 }
             } else if (action === 'deleteSubTask') {
-                e.preventDefault();
-                e.stopPropagation();
-                const taskId = actionElement.dataset.taskId;
-                const subTaskId = parseInt(actionElement.dataset.subtaskId);
+                const taskId = actionElement.getAttribute('data-task-id') || actionElement.dataset.taskId;
+                const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId);
                 if (taskId && subTaskId) {
                     if (confirm('Удалить это действие из плана?')) {
                         this.deleteSubTask(taskId, subTaskId);
