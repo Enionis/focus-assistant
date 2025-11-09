@@ -237,7 +237,7 @@ class FocusHelperApp {
 
     cancelPomodoro() {
         // Сохраняем последнюю тему pomodoro перед выходом
-        if (this.activeTask && this.activeTask.focusText) {
+        if (this.activeTask?.focusText) {
             this.lastPomodoroFocus = this.activeTask.focusText;
             localStorage.setItem('lastPomodoroFocus', this.lastPomodoroFocus);
             console.log('Saved last pomodoro focus:', this.lastPomodoroFocus);
@@ -269,9 +269,9 @@ class FocusHelperApp {
         this.saveStats(this.stats);
 
         // Обновление задачи
-        const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
+        const task = this.tasks.find(t => String(t.id) === String(this.activeTask?.taskId));
         if (task) {
-            const subTask = task.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
+            const subTask = task.subTasks.find(st => Number(st.id) === Number(this.activeTask?.subTaskId));
             if (subTask) {
                 subTask.completedPomodoros++;
                 task.completedPomodoros++;
@@ -286,6 +286,18 @@ class FocusHelperApp {
         alert('Сессия завершена! Отдохни 5 минут.');
         this.syncWithBot();
         this.navigateTo('home');
+    }
+
+    // Быстрый старт Pomodoro (из навигации)
+    startQuickPomodoro() {
+        console.log('startQuickPomodoro called, activeTask exists:', !!this.activeTask);
+        if (this.activeTask) {
+            // Если таймер активен (пауза или готов к старту), просто переходим к экрану без модалки
+            this.navigateTo('pomodoro');
+        } else {
+            // Иначе показываем модалку для новой темы
+            this.showFocusInputModal();
+        }
     }
 
     // Удаление задачи
@@ -1256,8 +1268,7 @@ class FocusHelperApp {
                 this.cancelPomodoro();
                 // cancelPomodoro уже вызывает navigateTo, который вызывает renderApp
             } else if (action === 'startQuickPomodoro') {
-                console.log('startQuickPomodoro clicked');
-                this.showFocusInputModal();
+                this.startQuickPomodoro();
             } else if (action === 'startTimer') {
                 this.startTimer();
             } else if (action === 'editSubTask') {
