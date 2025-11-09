@@ -154,19 +154,26 @@ class FocusHelperApp {
     }
 
     // Pomodoro логика
-    startPomodoro(taskId, subTaskId) {
+    startPomodoro(taskId, subTaskId, focusText = null) {
         if (!taskId || !subTaskId) {
             console.error('startPomodoro: missing taskId or subTaskId', { taskId, subTaskId });
             return;
         }
-        this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId) };
+        this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId), focusText: focusText || '' };
         this.timeLeft = (this.settings.pomodoroLength || 25) * 60;
-        this.isRunning = true;
+        this.isRunning = false; // Не запускаем сразу
         this.isPaused = false;
         this.navigateTo('pomodoro');
+        // Таймер не запускается автоматически - пользователь должен нажать "Начать"
+    }
+
+    // Запуск таймера (после того как пользователь нажал "Начать")
+    startTimer() {
         if (this.timerInterval) {
             clearInterval(this.timerInterval);
         }
+        this.isRunning = true;
+        this.isPaused = false;
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
@@ -176,6 +183,7 @@ class FocusHelperApp {
             }
             this.renderApp();
         }, 1000);
+        this.renderApp();
     }
 
     pausePomodoro() {
@@ -238,12 +246,149 @@ class FocusHelperApp {
         // Приводим к строке для сравнения
         const idStr = String(taskId);
         const beforeCount = this.tasks.length;
+        console.log('deleteTask before filter:', { taskId: idStr, tasks: this.tasks.map(t => ({ id: t.id, title: t.title })) });
         this.tasks = this.tasks.filter(t => String(t.id) !== idStr);
         const afterCount = this.tasks.length;
-        console.log('deleteTask:', { taskId: idStr, beforeCount, afterCount, deleted: beforeCount > afterCount });
+        console.log('deleteTask after filter:', { taskId: idStr, beforeCount, afterCount, deleted: beforeCount > afterCount, remainingTasks: this.tasks.map(t => ({ id: t.id, title: t.title })) });
+        
+        if (beforeCount === afterCount) {
+            console.error('deleteTask: Task was not deleted!', { taskId: idStr, allTaskIds: this.tasks.map(t => String(t.id)) });
+        }
+        
+        this.saveTasks(this.tasks);
+        this.syncWithBot();
+        // Если удалили текущую задачу, возвращаемся на главную
+        if (this.selectedTaskId === idStr) {
+            this.selectedTaskId = null;
+            this.navigateTo('home');
+        } else {
+            this.renderApp();
+        }
+    }
+
+    // Удаление подзадачи
+    deleteSubTask(taskId, subTaskId) {
+        const task = this.tasks.find(t => String(t.id) === String(taskId));
+        if (!task) return;
+        
+        const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
+        if (!subTask) return;
+
+        // Удаляем подзадачу
+        const oldPomodoros = subTask.estimatedPomodoros;
+        const oldCompleted = subTask.completedPomodoros;
+        task.subTasks = task.subTasks.filter(st => Number(st.id) !== Number(subTaskId));
+        
+        // Пересчитываем общее количество pomodoros
+        task.totalPomodoros = task.totalPomodoros - oldPomodoros;
+        task.completedPomodoros = Math.max(0, task.completedPomodoros - oldCompleted);
+        
         this.saveTasks(this.tasks);
         this.syncWithBot();
         this.renderApp();
+    }
+
+    // Показать модальное окно для ввода фокуса перед pomodoro
+    showFocusInputModal() {
+        const modal = document.createElement('div');
+        modal.className = 'focus-input-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'focus-input-modal-content';
+        modalContent.style.cssText = `
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+        `;
+        
+        modalContent.innerHTML = `
+            <h2 style="margin-bottom: 16px;">На что фокус?</h2>
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
+            <input type="text" id="focusInput" placeholder="Например: Изучить новую тему" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
+            <div style="display: flex; gap: 12px;">
+                <button class="btn primary" id="startFocusPomodoro" style="flex: 1;">Начать Pomodoro</button>
+                <button class="btn secondary" id="cancelFocusInput" style="flex: 1;">Отмена</button>
+            </div>
+        `;
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        // Фокус на поле ввода для показа клавиатуры
+        const focusInput = document.getElementById('focusInput');
+        setTimeout(() => focusInput.focus(), 100);
+        
+        // Обработчики
+        const startBtn = document.getElementById('startFocusPomodoro');
+        const cancelBtn = document.getElementById('cancelFocusInput');
+        
+        const closeModal = () => {
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
+        };
+        
+        const startPomodoro = () => {
+            const focusText = document.getElementById('focusInput').value.trim();
+            if (!focusText) {
+                alert('Пожалуйста, введите задачу для фокуса');
+                return;
+            }
+            
+            // Создаем временную задачу или используем существующую
+            if (this.tasks.length > 0) {
+                const lastTask = this.tasks[this.tasks.length - 1];
+                if (lastTask && lastTask.subTasks.length > 0) {
+                    const activeSubTask = lastTask.subTasks.find(st => !st.completed) || lastTask.subTasks[0];
+                    this.startPomodoro(lastTask.id, activeSubTask.id, focusText);
+                } else {
+                    // Создаем быструю задачу
+                    this.createTask(focusText).then(() => {
+                        const newTask = this.tasks[this.tasks.length - 1];
+                        if (newTask && newTask.subTasks.length > 0) {
+                            this.startPomodoro(newTask.id, newTask.subTasks[0].id, focusText);
+                        }
+                    });
+                }
+            } else {
+                // Нет задач, создаем новую
+                this.createTask(focusText).then(() => {
+                    const newTask = this.tasks[this.tasks.length - 1];
+                    if (newTask && newTask.subTasks.length > 0) {
+                        this.startPomodoro(newTask.id, newTask.subTasks[0].id, focusText);
+                    }
+                });
+            }
+            closeModal();
+        };
+        
+        startBtn.addEventListener('click', startPomodoro);
+        cancelBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+        
+        // Сохранение по Enter
+        focusInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                startPomodoro();
+            }
+        });
     }
 
     // Редактирование подзадачи
@@ -466,6 +611,7 @@ class FocusHelperApp {
                     </div>
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="editSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Редактировать">✏️</button>
+                        <button class="icon-btn" data-action="deleteSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Удалить">🗑️</button>
                         <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
                     </div>
                 </div>
@@ -523,6 +669,8 @@ class FocusHelperApp {
 
         const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
         const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
+        const focusText = this.activeTask.focusText || (subTask ? subTask.title : 'Фокус');
+        
         if (!task || !subTask) {
             console.error('renderPomodoro: task or subTask not found', { 
                 taskId: this.activeTask.taskId, 
@@ -536,14 +684,41 @@ class FocusHelperApp {
         const seconds = this.timeLeft % 60;
         const progress = ((this.settings.pomodoroLength * 60 - this.timeLeft) / (this.settings.pomodoroLength * 60)) * 100;
 
+        // Если таймер еще не запущен, показываем кнопку "Начать"
+        if (!this.isRunning && !this.isPaused) {
+            return `
+                <div class="app-container">
+                    <div class="container flex column center" style="text-align: center;">
+                        <div class="flex center" style="margin-bottom: 16px;">
+                            <div class="emoji-icon">🍅</div>
+                            <div class="body">Фокус на: ${focusText}</div>
+                        </div>
+                        <div class="timer-container">
+                            <div class="timer-circle">
+                                <div class="timer-text">${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}</div>
+                                <div class="timer-label">Готов начать?</div>
+                            </div>
+                        </div>
+                        <div class="flex gap-16" style="margin-top: 24px;">
+                            <button class="btn primary" data-action="startTimer" style="min-width: 200px;">▶️ Начать Pomodoro</button>
+                        </div>
+                        <div class="flex gap-16" style="margin-top: 16px;">
+                            <button class="btn secondary" data-action="cancelPomodoro" style="min-width: 200px;">❌ Отмена</button>
+                        </div>
+                    </div>
+                    ${this.renderNavigation()}
+                </div>
+            `;
+        }
+
         return `
             <div class="app-container">
                 <div class="container flex column center" style="text-align: center;">
                     <div class="flex center" style="margin-bottom: 16px;">
                         <div class="emoji-icon">🍅</div>
-                        <div class="body">Фокус на: ${subTask.title}</div>
+                        <div class="body">Фокус на: ${focusText}</div>
                     </div>
-                    <div class="timer-container ${this.isRunning ? 'pulsing' : ''}">
+                    <div class="timer-container ${this.isRunning && !this.isPaused ? 'pulsing' : ''}">
                         <div class="timer-circle">
                             <div class="timer-text">${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}</div>
                             <div class="timer-label">${this.isPaused ? 'Пауза' : 'Фокус-режим'}</div>
@@ -744,9 +919,12 @@ class FocusHelperApp {
                 e.preventDefault();
                 e.stopPropagation();
                 const view = actionElement.dataset.view;
-                console.log('navigate clicked:', view, actionElement);
+                console.log('navigate clicked:', view, actionElement, actionElement.dataset);
                 if (view) {
+                    console.log('Navigating to:', view);
                     this.navigateTo(view);
+                } else {
+                    console.error('navigate: view is missing', actionElement.dataset);
                 }
             } else if (action === 'setDailyHours') {
                 this.settings.dailyHours = parseInt(actionElement.dataset.value);
@@ -804,42 +982,26 @@ class FocusHelperApp {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('startQuickPomodoro clicked');
-                // Если уже есть активная задача, просто переходим к pomodoro
-                if (this.tasks.length > 0) {
-                    const lastTask = this.tasks[this.tasks.length - 1];
-                    if (lastTask && lastTask.subTasks.length > 0) {
-                        // Находим первую незавершенную подзадачу
-                        const activeSubTask = lastTask.subTasks.find(st => !st.completed) || lastTask.subTasks[0];
-                        this.startPomodoro(lastTask.id, activeSubTask.id);
-                    } else {
-                        // Создаем быструю задачу
-                        const quickTask = prompt('Быстрая сессия: опиши задачу');
-                        if (quickTask) {
-                            this.createTask(quickTask).then(() => {
-                                const newTask = this.tasks[this.tasks.length - 1];
-                                if (newTask && newTask.subTasks.length > 0) {
-                                    this.startPomodoro(newTask.id, newTask.subTasks[0].id);
-                                }
-                            });
-                        }
-                    }
-                } else {
-                    // Нет задач, создаем новую
-                    const quickTask = prompt('Быстрая сессия: опиши задачу');
-                    if (quickTask) {
-                        this.createTask(quickTask).then(() => {
-                            const newTask = this.tasks[this.tasks.length - 1];
-                            if (newTask && newTask.subTasks.length > 0) {
-                                this.startPomodoro(newTask.id, newTask.subTasks[0].id);
-                            }
-                        });
-                    }
-                }
+                this.showFocusInputModal();
+            } else if (action === 'startTimer') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.startTimer();
             } else if (action === 'editSubTask') {
                 const taskId = actionElement.dataset.taskId;
                 const subTaskId = parseInt(actionElement.dataset.subtaskId);
                 if (taskId && subTaskId) {
                     this.editSubTask(taskId, subTaskId);
+                }
+            } else if (action === 'deleteSubTask') {
+                e.preventDefault();
+                e.stopPropagation();
+                const taskId = actionElement.dataset.taskId;
+                const subTaskId = parseInt(actionElement.dataset.subtaskId);
+                if (taskId && subTaskId) {
+                    if (confirm('Удалить это действие из плана?')) {
+                        this.deleteSubTask(taskId, subTaskId);
+                    }
                 }
             }
             
