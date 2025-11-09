@@ -153,11 +153,18 @@ class FocusHelperApp {
 
     // Pomodoro логика
     startPomodoro(taskId, subTaskId) {
-        this.activeTask = { taskId, subTaskId };
-        this.timeLeft = this.settings.pomodoroLength * 60;
+        if (!taskId || !subTaskId) {
+            console.error('startPomodoro: missing taskId or subTaskId', { taskId, subTaskId });
+            return;
+        }
+        this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId) };
+        this.timeLeft = (this.settings.pomodoroLength || 25) * 60;
         this.isRunning = true;
         this.isPaused = false;
         this.navigateTo('pomodoro');
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+        }
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
@@ -201,9 +208,9 @@ class FocusHelperApp {
         this.saveStats(this.stats);
 
         // Обновление задачи
-        const task = this.tasks.find(t => t.id === this.activeTask.taskId);
+        const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
         if (task) {
-            const subTask = task.subTasks.find(st => st.id === this.activeTask.subTaskId);
+            const subTask = task.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
             if (subTask) {
                 subTask.completedPomodoros++;
                 task.completedPomodoros++;
@@ -222,7 +229,10 @@ class FocusHelperApp {
 
     // Удаление задачи
     deleteTask(taskId) {
-        this.tasks = this.tasks.filter(t => t.id !== taskId);
+        if (!taskId) return;
+        // Приводим к строке для сравнения
+        const idStr = String(taskId);
+        this.tasks = this.tasks.filter(t => String(t.id) !== idStr);
         this.saveTasks(this.tasks);
         this.syncWithBot();
         this.renderApp();
@@ -394,9 +404,16 @@ class FocusHelperApp {
     renderPomodoro() {
         if (!this.activeTask) return this.renderHome();
 
-        const task = this.tasks.find(t => t.id === this.activeTask.taskId);
-        const subTask = task?.subTasks.find(st => st.id === this.activeTask.subTaskId);
-        if (!task || !subTask) return this.renderHome();
+        const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
+        const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
+        if (!task || !subTask) {
+            console.error('renderPomodoro: task or subTask not found', { 
+                taskId: this.activeTask.taskId, 
+                subTaskId: this.activeTask.subTaskId,
+                tasks: this.tasks.map(t => ({ id: t.id, title: t.title }))
+            });
+            return this.renderHome();
+        }
 
         const minutes = Math.floor(this.timeLeft / 60);
         const seconds = this.timeLeft % 60;
@@ -555,17 +572,34 @@ class FocusHelperApp {
 
     // Слушатели событий
     attachEventListeners() {
-        document.addEventListener('click', (e) => {
-            // Проверяем, есть ли action на самом элементе или на родителе
-            const action = e.target.dataset.action || e.target.closest('[data-action]')?.dataset.action;
-            if (!action) return;
+        // Удаляем старый обработчик, если он был
+        if (this.clickHandler) {
+            document.removeEventListener('click', this.clickHandler);
+        }
+        
+        // Создаем новый обработчик
+        this.clickHandler = (e) => {
+            // Находим ближайший элемент с data-action (работает даже если кликнули на вложенный элемент)
+            const actionElement = e.target.closest('[data-action]');
+            if (!actionElement) return;
             
-            // Получаем элемент с data-action для получения других data-атрибутов
-            const actionElement = e.target.dataset.action ? e.target : e.target.closest('[data-action]');
+            const action = actionElement.dataset.action;
+            if (!action) return;
+
+            // Отладка (можно убрать позже)
+            console.log('Action clicked:', action, actionElement.dataset);
+
+            // Предотвращаем стандартное поведение для кнопок
+            if (actionElement.tagName === 'BUTTON' || actionElement.tagName === 'A') {
+                e.preventDefault();
+            }
 
             // Обработка действий
             if (action === 'navigate') {
-                this.navigateTo(actionElement.dataset.view);
+                const view = actionElement.dataset.view;
+                if (view) {
+                    this.navigateTo(view);
+                }
             } else if (action === 'setDailyHours') {
                 this.settings.dailyHours = parseInt(actionElement.dataset.value);
             } else if (action === 'setProductiveTime') {
@@ -589,8 +623,11 @@ class FocusHelperApp {
                 // Уже сохранено в createTask
                 this.navigateTo('home');
             } else if (action === 'viewTask') {
-                this.selectedTaskId = actionElement.dataset.id;
-                this.navigateTo('taskDetails');
+                const taskId = actionElement.dataset.id;
+                if (taskId) {
+                    this.selectedTaskId = taskId;
+                    this.navigateTo('taskDetails');
+                }
             } else if (action === 'deleteTask') {
                 const taskId = actionElement.dataset.id;
                 if (taskId && confirm('Удалить задачу?')) {
@@ -599,18 +636,17 @@ class FocusHelperApp {
             } else if (action === 'startPomodoro') {
                 const taskId = actionElement.dataset.task;
                 const subTaskId = parseInt(actionElement.dataset.subtask);
-                if (taskId && subTaskId) {
+                if (taskId && subTaskId && !isNaN(subTaskId)) {
                     this.startPomodoro(taskId, subTaskId);
                 }
             } else if (action === 'pausePomodoro') {
                 this.pausePomodoro();
-                this.renderApp(); // Обновить только для pomodoro
-                return; // Не вызывать renderApp() еще раз
+                this.renderApp();
             } else if (action === 'cancelPomodoro') {
                 this.cancelPomodoro();
                 // cancelPomodoro уже вызывает navigateTo, который вызывает renderApp
-                return;
             } else if (action === 'startQuickPomodoro') {
+                e.preventDefault();
                 const quickTask = prompt('Быстрая сессия: опиши задачу');
                 if (quickTask) {
                     this.createTask(quickTask).then(() => {
@@ -620,14 +656,11 @@ class FocusHelperApp {
                         }
                     });
                 }
-                return; // Не вызывать renderApp() сразу, так как createTask асинхронный
             }
-
-            // Для большинства действий обновляем интерфейс
-            if (action !== 'pausePomodoro' && action !== 'cancelPomodoro' && action !== 'startQuickPomodoro') {
-                this.renderApp();
-            }
-        });
+        };
+        
+        // Привязываем обработчик
+        document.addEventListener('click', this.clickHandler);
     }
 
     attachDynamicEventListeners() {
