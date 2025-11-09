@@ -107,6 +107,7 @@ class FocusHelperApp {
 
     // Навигация
     navigateTo(view) {
+        console.log('navigateTo called with view:', view, 'current view:', this.currentView);
         this.currentView = view;
         this.renderApp();
     }
@@ -311,6 +312,125 @@ class FocusHelperApp {
         } else {
             this.renderApp();
         }
+    }
+
+    // Показать модальное окно подтверждения удаления задачи
+    showDeleteTaskConfirm(taskId) {
+        const modal = document.createElement('div');
+        modal.className = 'confirm-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'confirm-modal-content';
+        modalContent.style.cssText = `
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+        `;
+        
+        modalContent.innerHTML = `
+            <h2 style="margin-bottom: 16px;">Удалить задачу?</h2>
+            <p style="margin-bottom: 24px; color: #666;">Это действие нельзя отменить.</p>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn primary" id="confirmDeleteTask" style="flex: 1; background: var(--error);">Удалить</button>
+                <button class="btn secondary" id="cancelDeleteTask" style="flex: 1;">Отмена</button>
+            </div>
+        `;
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        const confirmBtn = document.getElementById('confirmDeleteTask');
+        const cancelBtn = document.getElementById('cancelDeleteTask');
+        
+        const closeModal = () => {
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
+        };
+        
+        confirmBtn.addEventListener('click', () => {
+            console.log('Calling deleteTask with:', taskId);
+            this.deleteTask(taskId);
+            closeModal();
+        });
+        
+        cancelBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+    }
+
+    // Показать модальное окно подтверждения удаления подзадачи
+    showDeleteSubTaskConfirm(taskId, subTaskId) {
+        const modal = document.createElement('div');
+        modal.className = 'confirm-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'confirm-modal-content';
+        modalContent.style.cssText = `
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+        `;
+        
+        modalContent.innerHTML = `
+            <h2 style="margin-bottom: 16px;">Удалить действие из плана?</h2>
+            <p style="margin-bottom: 24px; color: #666;">Это действие нельзя отменить.</p>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn primary" id="confirmDeleteSubTask" style="flex: 1; background: var(--error);">Удалить</button>
+                <button class="btn secondary" id="cancelDeleteSubTask" style="flex: 1;">Отмена</button>
+            </div>
+        `;
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        const confirmBtn = document.getElementById('confirmDeleteSubTask');
+        const cancelBtn = document.getElementById('cancelDeleteSubTask');
+        
+        const closeModal = () => {
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
+        };
+        
+        confirmBtn.addEventListener('click', () => {
+            this.deleteSubTask(taskId, subTaskId);
+            closeModal();
+        });
+        
+        cancelBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
     }
 
     // Удаление подзадачи
@@ -963,7 +1083,7 @@ class FocusHelperApp {
             }
             
             // Игнорируем клики внутри модальных окон
-            if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal')) {
+            if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal') || e.target.closest('.confirm-modal')) {
                 return;
             }
             
@@ -997,11 +1117,13 @@ class FocusHelperApp {
             }
 
             // Отладка
-            console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target);
+            console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target, 'has data-view:', actionElement.hasAttribute('data-view'), 'dataset.view:', actionElement.dataset.view);
 
-            // Предотвращаем стандартное поведение
-            e.preventDefault();
-            e.stopPropagation();
+            // Предотвращаем стандартное поведение только для кнопок
+            if (actionElement.tagName === 'BUTTON' || actionElement.closest('button')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
 
             // Обработка действий
             if (action === 'navigate') {
@@ -1074,10 +1196,7 @@ class FocusHelperApp {
                 });
                 
                 if (taskId) {
-                    if (confirm('Удалить задачу?')) {
-                        console.log('Calling deleteTask with:', taskId);
-                        this.deleteTask(taskId);
-                    }
+                    this.showDeleteTaskConfirm(taskId);
                 } else {
                     console.error('deleteTask: taskId not found', {
                         actionElement,
@@ -1112,9 +1231,7 @@ class FocusHelperApp {
                 const taskId = actionElement.getAttribute('data-task-id') || actionElement.dataset.taskId;
                 const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId);
                 if (taskId && subTaskId) {
-                    if (confirm('Удалить это действие из плана?')) {
-                        this.deleteSubTask(taskId, subTaskId);
-                    }
+                    this.showDeleteSubTaskConfirm(taskId, subTaskId);
                 }
             }
             
