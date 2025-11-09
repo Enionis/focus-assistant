@@ -1011,9 +1011,11 @@ class FocusHelperApp {
         return `
             <div class="app-container">
                 <div class="container">
-                    <div style="text-align: center; margin-bottom: 24px;">
-                        <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto; margin-top: 8px;">Назад</button>
-                        <h1 class="title">Статистика</h1>                        
+                    <div class="flex between center" style="margin-bottom: 16px;">
+                        <div style="flex: 1;">
+                            <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto; margin-bottom: 8px;">← Назад</button>
+                            <h1 class="title" style="margin-bottom: 0;">Статистика</h1>
+                        </div>
                     </div>
                     <div class="panel">
                         <div class="flex center" style="gap: 16px; margin-bottom: 16px;">
