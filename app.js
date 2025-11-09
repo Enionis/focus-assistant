@@ -48,6 +48,19 @@ class FocusHelperApp {
             this.tasks = JSON.parse(localStorage.getItem('focus_tasks') || '[]');
             this.stats = JSON.parse(localStorage.getItem('focus_stats') || '{}');
 
+            // Убеждаемся, что stats валидны
+            if (!this.stats || typeof this.stats !== 'object') {
+                this.stats = {
+                    totalSessions: 0,
+                    totalFocusTime: 0,
+                    currentStreak: 0,
+                    longestStreak: 0,
+                    level: 1,
+                    xp: 0,
+                    achievements: []
+                };
+            }
+
             // Синхронизация с ботом
             if (this.userData?.userId) {
                 await this.syncWithBot();
@@ -61,6 +74,18 @@ class FocusHelperApp {
             }
         } catch (error) {
             console.error('Ошибка загрузки данных:', error);
+            // Fallback для stats
+            if (!this.stats || typeof this.stats !== 'object') {
+                this.stats = {
+                    totalSessions: 0,
+                    totalFocusTime: 0,
+                    currentStreak: 0,
+                    longestStreak: 0,
+                    level: 1,
+                    xp: 0,
+                    achievements: []
+                };
+            }
         }
     }
 
@@ -932,7 +957,7 @@ class FocusHelperApp {
             }
         }
         
-        // Убеждаемся, что статистика загружена
+        // Убеждаемся, что статистика загружена (fallback)
         if (!this.stats) {
             this.stats = {
                 totalSessions: 0,
@@ -952,7 +977,13 @@ class FocusHelperApp {
         const levelProgress = this.stats.xp % 100;
 
         const achievements = [
-            { id: 'first_steps', title: 'Первые шаги', icon: '🎯', unlocked: (this.stats.achievements && Array.isArray(this.stats.achievements)) ? this.stats.achievements.some(a => a.id === 'first_steps') : false }
+            { 
+                id: 'first_steps', 
+                title: 'Первые шаги', 
+                icon: '🎯', 
+                unlocked: (this.stats && this.stats.achievements && Array.isArray(this.stats.achievements)) ? 
+                    this.stats.achievements.some(a => a.id === 'first_steps') : false 
+            }
         ].map(ach => `
             <div class="task-item">
                 <div class="flex center">
@@ -1119,10 +1150,12 @@ class FocusHelperApp {
             // Отладка
             console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target, 'has data-view:', actionElement.hasAttribute('data-view'), 'dataset.view:', actionElement.dataset.view);
 
+            // Останавливаем bubbling сразу после нахождения action (чтобы избежать повторных обработок)
+            e.stopPropagation();
+
             // Предотвращаем стандартное поведение только для кнопок
             if (actionElement.tagName === 'BUTTON' || actionElement.closest('button')) {
                 e.preventDefault();
-                e.stopPropagation();
             }
 
             // Обработка действий
@@ -1141,15 +1174,18 @@ class FocusHelperApp {
             } else if (action === 'setDailyHours') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.dailyHours = parseInt(value);
+                this.saveSettings(this.settings); // Сохраняем сразу для надёжности
                 this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
             } else if (action === 'setProductiveTime') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.productiveTime = value;
+                this.saveSettings(this.settings); // Сохраняем сразу
                 this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
             } else if (action === 'setPomodoro') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.pomodoroLength = parseInt(value);
                 this.settings.breakLength = parseInt(value) / 5;
+                this.saveSettings(this.settings); // Сохраняем сразу
                 this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
@@ -1262,5 +1298,4 @@ class FocusHelperApp {
 
 // Инициализация
 const app = new FocusHelperApp();
-window.app = app;
 window.app = app;

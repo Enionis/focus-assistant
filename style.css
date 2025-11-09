@@ -182,6 +182,7 @@ body {
     background: var(--primary);
     color: #FFFFFF;
     border-color: var(--primary);
+    transition: all 0.3s ease; /* Плавное выделение */
 }
 
 .btn.tertiary {
