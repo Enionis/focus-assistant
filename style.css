@@ -178,6 +178,12 @@ body {
     border: 1px solid var(--border);
 }
 
+.btn.secondary.selected {
+    background: var(--primary);
+    color: #FFFFFF;
+    border-color: var(--primary);
+}
+
 .btn.tertiary {
     background: transparent;
     color: var(--text);
