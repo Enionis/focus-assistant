@@ -531,19 +531,24 @@ class FocusHelperApp {
 
         this.saveStats(this.stats);
 
-        // Обновление задачи
-        const task = this.tasks.find(t => String(t.id) === String(this.activeTask?.taskId));
-        if (task) {
-            const subTask = task.subTasks.find(st => Number(st.id) === Number(this.activeTask?.subTaskId));
-            if (subTask) {
-                subTask.completedPomodoros++;
-                task.completedPomodoros++;
-                if (subTask.completedPomodoros >= subTask.estimatedPomodoros) {
-                    subTask.completed = true;
+        // Обновление задачи - ТОЛЬКО если Pomodoro был запущен из задачи с подзадачей
+        // Если activeTask содержит taskId и subTaskId - это Pomodoro из задачи
+        // Если activeTask содержит только focusText - это быстрый Pomodoro, не обновляем задачи
+        if (this.activeTask?.taskId && this.activeTask?.subTaskId) {
+            const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
+            if (task) {
+                const subTask = task.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
+                if (subTask) {
+                    subTask.completedPomodoros++;
+                    task.completedPomodoros++;
+                    if (subTask.completedPomodoros >= subTask.estimatedPomodoros) {
+                        subTask.completed = true;
+                    }
+                    this.saveTasks(this.tasks);
                 }
             }
-            this.saveTasks(this.tasks);
         }
+        // Если это быстрый Pomodoro (без taskId/subTaskId), обновляем только статистику (уже сделано выше)
 
         this.activeTask = null;
         
@@ -730,15 +735,15 @@ class FocusHelperApp {
         console.log('Модальное окно добавлено в DOM');
     }
 
-    // Быстрый старт Pomodoro (из навигации)
+    // Быстрый старт Pomodoro (из навигации) - БЕЗ привязки к задаче
     startQuickPomodoro() {
         console.log('startQuickPomodoro called, activeTask exists:', !!this.activeTask);
         if (this.activeTask) {
             // Если таймер активен (пауза или готов к старту), просто переходим к экрану без модалки
             this.navigateTo('pomodoro');
         } else {
-            // Иначе показываем модалку для новой темы
-            this.showFocusInputModal();
+            // Иначе показываем модалку для новой темы (БЕЗ создания задачи)
+            this.showQuickPomodoroModal();
         }
     }
 
@@ -934,7 +939,90 @@ class FocusHelperApp {
         this.renderApp();
     }
 
-    // Показать модальное окно для ввода фокуса перед pomodoro
+    // Показать модальное окно для быстрого Pomodoro (БЕЗ привязки к задаче)
+    showQuickPomodoroModal() {
+        const modal = document.createElement('div');
+        modal.className = 'focus-input-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'focus-input-modal-content';
+        modalContent.style.cssText = `
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+        `;
+        
+        modalContent.innerHTML = `
+            <h2 style="margin-bottom: 16px;">На что фокус?</h2>
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
+            <input type="text" id="focusInput" value="${this.lastPomodoroFocus || ''}" placeholder="Например: Изучить новую тему" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
+            <div style="display: flex; gap: 12px;">
+                <button class="btn primary" id="startQuickFocusPomodoro" style="flex: 1;">Начать Pomodoro</button>
+                <button class="btn secondary" id="cancelQuickFocusInput" style="flex: 1;">Отмена</button>
+            </div>
+        `;
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        // Фокус на поле ввода для показа клавиатуры
+        const focusInput = document.getElementById('focusInput');
+        setTimeout(() => focusInput.focus(), 100);
+        
+        // Обработчики
+        const startBtn = document.getElementById('startQuickFocusPomodoro');
+        const cancelBtn = document.getElementById('cancelQuickFocusInput');
+        
+        const closeModal = () => {
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
+        };
+        
+        const startPomodoro = () => {
+            const focusText = document.getElementById('focusInput').value.trim();
+            if (!focusText) {
+                alert('Пожалуйста, введите задачу для фокуса');
+                return;
+            }
+            
+            // Сохраняем последнюю тему
+            this.lastPomodoroFocus = focusText;
+            localStorage.setItem('lastPomodoroFocus', focusText);
+            
+            // Создаем быстрый Pomodoro БЕЗ привязки к задаче
+            // activeTask будет содержать только focusText, без taskId и subTaskId
+            this.activeTask = { focusText: focusText };
+            this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
+            this.isRunning = false;
+            this.isPaused = false;
+            
+            closeModal();
+            this.navigateTo('pomodoro');
+        };
+        
+        startBtn.addEventListener('click', startPomodoro);
+        cancelBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+    }
+
+    // Показать модальное окно для ввода фокуса перед pomodoro (для задач)
     showFocusInputModal() {
         const modal = document.createElement('div');
         modal.className = 'focus-input-modal';
@@ -1341,17 +1429,27 @@ class FocusHelperApp {
     renderPomodoro() {
         if (!this.activeTask) return this.renderHome();
 
-        const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
-        const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
-        const focusText = this.activeTask.focusText || (subTask ? subTask.title : 'Фокус');
+        // Определяем, это Pomodoro из задачи или быстрый Pomodoro
+        const isQuickPomodoro = !this.activeTask.taskId || !this.activeTask.subTaskId;
         
-        if (!task || !subTask) {
-            console.error('renderPomodoro: task or subTask not found', { 
-                taskId: this.activeTask.taskId, 
-                subTaskId: this.activeTask.subTaskId,
-                tasks: this.tasks.map(t => ({ id: t.id, title: t.title }))
-            });
-            return this.renderHome();
+        let focusText = 'Фокус';
+        if (isQuickPomodoro) {
+            // Быстрый Pomodoro - используем только focusText
+            focusText = this.activeTask.focusText || 'Фокус';
+        } else {
+            // Pomodoro из задачи - получаем информацию о задаче и подзадаче
+            const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
+            const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
+            focusText = this.activeTask.focusText || (subTask ? subTask.title : 'Фокус');
+            
+            if (!task || !subTask) {
+                console.error('renderPomodoro: task or subTask not found', { 
+                    taskId: this.activeTask.taskId, 
+                    subTaskId: this.activeTask.subTaskId,
+                    tasks: this.tasks.map(t => ({ id: t.id, title: t.title }))
+                });
+                return this.renderHome();
+            }
         }
 
         const minutes = Math.floor(this.timeLeft / 60);
