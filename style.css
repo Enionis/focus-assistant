@@ -396,17 +396,25 @@ body {
         transform: scale(1);
         box-shadow: 0 8px 16px rgba(0,0,0,0.1);
     }
-    25% { 
-        transform: scale(1.015);
-        box-shadow: 0 9px 18px rgba(255, 107, 53, 0.15);
+    20% { 
+        transform: scale(1.01);
+        box-shadow: 0 8.5px 17px rgba(255, 107, 53, 0.12);
+    }
+    40% { 
+        transform: scale(1.02);
+        box-shadow: 0 9px 18px rgba(255, 107, 53, 0.18);
     }
     50% { 
         transform: scale(1.03);
         box-shadow: 0 10px 20px rgba(255, 107, 53, 0.25);
     }
-    75% { 
-        transform: scale(1.015);
-        box-shadow: 0 9px 18px rgba(255, 107, 53, 0.15);
+    60% { 
+        transform: scale(1.02);
+        box-shadow: 0 9px 18px rgba(255, 107, 53, 0.18);
+    }
+    80% { 
+        transform: scale(1.01);
+        box-shadow: 0 8.5px 17px rgba(255, 107, 53, 0.12);
     }
     100% { 
         transform: scale(1);
@@ -435,7 +443,7 @@ body {
 }
 
 .timer-container.pulsing .timer-circle {
-    animation: pulse 2.5s cubic-bezier(0.42, 0, 0.58, 1) infinite;
+    animation: pulse 3s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
     will-change: transform, box-shadow;
     transform-origin: center center;
 }

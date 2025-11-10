@@ -422,7 +422,7 @@ class FocusHelperApp {
         console.log('Таймер запущен, timeLeft:', this.timeLeft);
         
         // Обновляем время каждую секунду
-        // UI обновляем раз в секунду, чтобы не прерывать CSS анимацию пульсации
+        // Для плавной анимации обновляем только текст таймера, не весь DOM
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
@@ -435,15 +435,43 @@ class FocusHelperApp {
                     return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
                 }
             }
-            // Обновляем UI раз в секунду - этого достаточно для обновления времени
-            // CSS анимация пульсации будет работать независимо
-            this.renderApp();
+            // Обновляем только текст таймера и прогресс-бар, не весь DOM
+            this.updateTimerDisplay();
         }, 1000);
         this.renderApp();
     }
 
     pausePomodoro() {
         this.isPaused = !this.isPaused;
+    }
+
+    // Обновление только текста таймера и прогресса без пересоздания DOM
+    updateTimerDisplay() {
+        if (this.currentView !== 'pomodoro' || !this.activeTask) {
+            return;
+        }
+        
+        const minutes = Math.floor(this.timeLeft / 60);
+        const seconds = this.timeLeft % 60;
+        const timeText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Обновляем текст таймера
+        const timerTextElements = document.querySelectorAll('.timer-text');
+        timerTextElements.forEach(el => {
+            if (el.textContent !== timeText) {
+                el.textContent = timeText;
+            }
+        });
+        
+        // Обновляем прогресс-бар
+        const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
+        const progress = totalTime > 0 ? Math.min(Math.max(((totalTime - this.timeLeft) / totalTime) * 100, 0), 100) : 0;
+        const progressFillElements = document.querySelectorAll('.progress-fill');
+        progressFillElements.forEach(el => {
+            if (el.style.width !== `${progress}%`) {
+                el.style.width = `${progress}%`;
+            }
+        });
     }
 
     cancelPomodoro() {
