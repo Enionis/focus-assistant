@@ -104,6 +104,8 @@ class FocusHelperApp {
                 isOnboarded: false,
                 ...savedSettings
             };
+            // Принудительно устанавливаем 0.5 для тестирования (перезаписываем сохраненное значение)
+            this.settings.pomodoroLength = 0.5;
             this.tasks = JSON.parse(localStorage.getItem('focus_tasks') || '[]');
             this.stats = JSON.parse(localStorage.getItem('focus_stats') || '{}');
 
@@ -1084,7 +1086,9 @@ class FocusHelperApp {
 
         const minutes = Math.floor(this.timeLeft / 60);
         const seconds = this.timeLeft % 60;
-        const progress = ((this.settings.pomodoroLength * 60 - this.timeLeft) / (this.settings.pomodoroLength * 60)) * 100;
+        // Для расчета прогресса используем текущее значение pomodoroLength (0.5 для тестирования)
+        const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
+        const progress = totalTime > 0 ? ((totalTime - this.timeLeft) / totalTime) * 100 : 0;
 
         // Если таймер еще не запущен, показываем кнопку "Начать"
         if (!this.isRunning && !this.isPaused) {
