@@ -33,11 +33,29 @@ class FocusHelperApp {
 
     // Инициализация
     init() {
+        // Проверяем доступность localStorage
+        if (!this.isLocalStorageAvailable()) {
+            console.error('❌ localStorage недоступен! Данные не будут сохраняться.');
+            alert('⚠️ Внимание: localStorage недоступен. Статистика не будет сохраняться после закрытия браузера.\n\nВозможные причины:\n- Режим инкогнито\n- Браузер заблокировал хранилище\n- Недостаточно места');
+        }
+        
         this.loadData();
         // Загружаем последнюю тему pomodoro
         this.lastPomodoroFocus = localStorage.getItem('lastPomodoroFocus') || null;
         this.attachEventListeners();
         this.renderApp();
+    }
+
+    // Проверка доступности localStorage
+    isLocalStorageAvailable() {
+        try {
+            const test = '__localStorage_test__';
+            localStorage.setItem(test, test);
+            localStorage.removeItem(test);
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 
     // Методы работы с данными (локальное хранение + синхронизация)
@@ -118,11 +136,35 @@ class FocusHelperApp {
 
     saveStats(newStats) {
         this.stats = newStats;
-        localStorage.setItem('focus_stats', JSON.stringify(newStats));
+        try {
+            localStorage.setItem('focus_stats', JSON.stringify(newStats));
+            // Дополнительная проверка: читаем обратно, чтобы убедиться, что сохранилось
+            const saved = localStorage.getItem('focus_stats');
+            if (!saved) {
+                console.warn('⚠️ Не удалось сохранить статистику в localStorage');
+            }
+        } catch (error) {
+            console.error('❌ Ошибка сохранения статистики:', error);
+            // Если localStorage переполнен, пытаемся очистить старые данные
+            if (error.name === 'QuotaExceededError') {
+                console.warn('⚠️ localStorage переполнен, очищаем старые данные...');
+                try {
+                    // Оставляем только самое важное
+                    localStorage.removeItem('focus_tasks');
+                    localStorage.setItem('focus_stats', JSON.stringify(newStats));
+                } catch (e) {
+                    console.error('❌ Критическая ошибка: не удалось сохранить статистику');
+                }
+            }
+        }
     }
 
     async syncWithBot() {
-        if (!this.userData?.userId) return;
+        if (!this.userData?.userId) {
+            // Если нет userId, данные хранятся только локально
+            console.log('ℹ️ Данные хранятся только локально (localStorage)');
+            return;
+        }
 
         try {
             const response = await fetch(`${this.apiBaseUrl}/sync`, {
@@ -141,9 +183,13 @@ class FocusHelperApp {
                 if (data.settings) this.saveSettings(data.settings);
                 if (data.tasks) this.saveTasks(data.tasks);
                 if (data.stats) this.saveStats(data.stats);
+                console.log('✅ Данные синхронизированы с сервером');
+            } else {
+                console.warn('⚠️ Синхронизация не удалась, данные сохранены локально');
             }
         } catch (error) {
-            console.error('Ошибка синхронизации:', error);
+            console.warn('⚠️ Ошибка синхронизации, данные сохранены локально:', error.message);
+            // Данные все равно сохранены в localStorage, так что это не критично
         }
     }
 
@@ -267,6 +313,77 @@ class FocusHelperApp {
         this.navigateTo('home');
     }
 
+    // Проверка и открытие достижений
+    checkAndUnlockAchievements() {
+        if (!Array.isArray(this.stats.achievements)) {
+            this.stats.achievements = [];
+        }
+
+        const hasAchievement = (id) => {
+            return this.stats.achievements.some(a => a && a.id === id);
+        };
+
+        // Достижения по уровням
+        const levelAchievements = {
+            1: { id: 'first_steps', title: 'Первые шаги', icon: '🎯' },
+            2: { id: 'level_2', title: 'Новичок', icon: '⭐' },
+            3: { id: 'level_3', title: 'Опытный', icon: '🌟' },
+            5: { id: 'level_5', title: 'Профессионал', icon: '💪' },
+            10: { id: 'level_10', title: 'Мастер', icon: '👑' }
+        };
+
+        // Проверяем достижения по уровням
+        if (levelAchievements[this.stats.level] && !hasAchievement(levelAchievements[this.stats.level].id)) {
+            this.stats.achievements.push(levelAchievements[this.stats.level]);
+        }
+
+        // Проверяем достижения по условиям
+        const conditionAchievements = [
+            {
+                id: 'first_steps',
+                title: 'Первые шаги',
+                icon: '🎯',
+                check: () => this.stats.totalSessions >= 1 && !hasAchievement('first_steps')
+            },
+            {
+                id: 'marathon',
+                title: 'Марафонец',
+                icon: '🏃',
+                check: () => this.stats.totalFocusTime >= 600 && !hasAchievement('marathon')
+            },
+            {
+                id: 'dedication',
+                title: 'Преданность',
+                icon: '🔥',
+                check: () => this.stats.totalSessions >= 50 && !hasAchievement('dedication')
+            },
+            {
+                id: 'streak_7',
+                title: 'Неделя силы',
+                icon: '📅',
+                check: () => this.stats.currentStreak >= 7 && !hasAchievement('streak_7')
+            },
+            {
+                id: 'streak_30',
+                title: 'Месяц дисциплины',
+                icon: '🗓️',
+                check: () => this.stats.currentStreak >= 30 && !hasAchievement('streak_30')
+            },
+            {
+                id: 'legend',
+                title: 'Легенда',
+                icon: '🏆',
+                check: () => this.stats.totalFocusTime >= 6000 && !hasAchievement('legend')
+            }
+        ];
+
+        conditionAchievements.forEach(ach => {
+            if (ach.check()) {
+                this.stats.achievements.push({ id: ach.id, title: ach.title, icon: ach.icon });
+            }
+        });
+    }
+
     completePomodoro() {
         clearInterval(this.timerInterval);
         this.timerInterval = null;
@@ -276,12 +393,11 @@ class FocusHelperApp {
         this.stats.totalSessions++;
         this.stats.totalFocusTime += this.settings.pomodoroLength;
         this.stats.xp += 10;
+        const oldLevel = this.stats.level;
         this.stats.level = Math.floor(this.stats.xp / 100) + 1;
 
-        // Проверка ачивок (заглушка)
-        if (this.stats.totalSessions === 1) {
-            this.stats.achievements.push({ id: 'first_steps', title: 'Первые шаги', icon: '🎯' });
-        }
+        // Проверка и открытие достижений
+        this.checkAndUnlockAchievements();
 
         this.saveStats(this.stats);
 
@@ -1012,28 +1128,139 @@ class FocusHelperApp {
         this.stats.level = this.stats.level || 1;
         this.stats.xp = this.stats.xp || 0;
         
+        // Проверяем и открываем достижения при просмотре статистики
+        this.checkAndUnlockAchievements();
+        
         console.log('Using stats for render:', this.stats);
         
         const hours = Math.floor(this.stats.totalFocusTime / 60);
         const minutes = this.stats.totalFocusTime % 60;
         const levelProgress = this.stats.xp % 100;
 
-        const achievements = [
+        // Определяем, какие достижения разблокированы
+        const hasAchievement = (id) => {
+            return Array.isArray(this.stats.achievements) && 
+                this.stats.achievements.some(a => a && a.id === id);
+        };
+
+        // Все возможные достижения с условиями открытия
+        const allAchievements = [
             { 
                 id: 'first_steps', 
                 title: 'Первые шаги', 
-                icon: '🎯', 
-                unlocked: Array.isArray(this.stats.achievements) && 
-                    this.stats.achievements.some(a => a && a.id === 'first_steps')
+                icon: '🎯',
+                description: 'Заверши первую сессию',
+                unlockLevel: 1
+            },
+            { 
+                id: 'level_2', 
+                title: 'Новичок', 
+                icon: '⭐',
+                description: 'Достигни 2 уровня',
+                unlockLevel: 2
+            },
+            { 
+                id: 'level_3', 
+                title: 'Опытный', 
+                icon: '🌟',
+                description: 'Достигни 3 уровня',
+                unlockLevel: 3
+            },
+            { 
+                id: 'level_5', 
+                title: 'Профессионал', 
+                icon: '💪',
+                description: 'Достигни 5 уровня',
+                unlockLevel: 5
+            },
+            { 
+                id: 'level_10', 
+                title: 'Мастер', 
+                icon: '👑',
+                description: 'Достигни 10 уровня',
+                unlockLevel: 10
+            },
+            { 
+                id: 'marathon', 
+                title: 'Марафонец', 
+                icon: '🏃',
+                description: '10 часов фокуса',
+                unlockLevel: 3,
+                checkCondition: () => this.stats.totalFocusTime >= 600
+            },
+            { 
+                id: 'dedication', 
+                title: 'Преданность', 
+                icon: '🔥',
+                description: '50 завершенных сессий',
+                unlockLevel: 4,
+                checkCondition: () => this.stats.totalSessions >= 50
+            },
+            { 
+                id: 'streak_7', 
+                title: 'Неделя силы', 
+                icon: '📅',
+                description: '7 дней подряд',
+                unlockLevel: 2,
+                checkCondition: () => this.stats.currentStreak >= 7
+            },
+            { 
+                id: 'streak_30', 
+                title: 'Месяц дисциплины', 
+                icon: '🗓️',
+                description: '30 дней подряд',
+                unlockLevel: 6,
+                checkCondition: () => this.stats.currentStreak >= 30
+            },
+            { 
+                id: 'legend', 
+                title: 'Легенда', 
+                icon: '🏆',
+                description: '100 часов фокуса',
+                unlockLevel: 8,
+                checkCondition: () => this.stats.totalFocusTime >= 6000
             }
-        ].map(ach => `
-            <div class="task-item">
+        ];
+
+        // Фильтруем достижения: показываем только те, которые доступны для текущего уровня
+        const availableAchievements = allAchievements.filter(ach => 
+            this.stats.level >= ach.unlockLevel
+        );
+
+        // Проверяем, какие достижения разблокированы
+        const achievements = availableAchievements.map(ach => {
+            const unlocked = hasAchievement(ach.id);
+            
+            return {
+                ...ach,
+                unlocked
+            };
+        }).map(ach => `
+            <div class="task-item ${ach.unlocked ? '' : 'achievement-locked'}">
                 <div class="flex center">
-                    <span class="emoji-icon">${ach.icon}</span>
-                    <div class="task-item-content">
-                        <div class="task-item-title">${ach.title}</div>
+                    <span class="emoji-icon" style="opacity: ${ach.unlocked ? '1' : '0.3'};">${ach.icon}</span>
+                    <div class="task-item-content" style="flex: 1;">
+                        <div class="task-item-title" style="opacity: ${ach.unlocked ? '1' : '0.5'};">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity: ${ach.unlocked ? '0.7' : '0.4'};">${ach.description}</div>
                     </div>
-                    ${ach.unlocked ? '<span style="color: var(--success);">✓</span>' : ''}
+                    ${ach.unlocked ? '<span style="color: var(--success); font-size: 20px;">✓</span>' : '<span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>'}
+                </div>
+            </div>
+        `).join('');
+
+        // Показываем закрытые достижения (следующие по уровню)
+        const lockedAchievements = allAchievements
+            .filter(ach => this.stats.level < ach.unlockLevel)
+            .slice(0, 3) // Показываем только 3 следующих
+            .map(ach => `
+            <div class="task-item achievement-locked">
+                <div class="flex center">
+                    <span class="emoji-icon" style="opacity: 0.2;">${ach.icon}</span>
+                    <div class="task-item-content" style="flex: 1;">
+                        <div class="task-item-title" style="opacity: 0.4;">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity: 0.3;">Откроется на уровне ${ach.unlockLevel}</div>
+                    </div>
+                    <span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>
                 </div>
             </div>
         `).join('');
@@ -1041,8 +1268,8 @@ class FocusHelperApp {
         return `
             <div class="app-container">
                 <div class="container">
-                    <div class="flex between center" style="margin-bottom: 16px;">
-                        <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto;">← Назад</button>
+                    <div style="margin-bottom: 16px;">
+                        <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto; margin-bottom: 8px;">← Назад</button>
                         <h1 class="title" style="margin-bottom: 0;">Статистика</h1>
                     </div>
                     <div class="panel">
@@ -1078,6 +1305,12 @@ class FocusHelperApp {
                     <div class="panel">
                         <h2 class="subtitle" style="margin-bottom: 16px;">Достижения</h2>
                         <div class="task-list">${achievements}</div>
+                        ${lockedAchievements ? `
+                            <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);">
+                                <h3 class="subtitle" style="margin-bottom: 16px; opacity: 0.6;">Следующие достижения</h3>
+                                <div class="task-list">${lockedAchievements}</div>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
                 ${this.renderNavigation()}

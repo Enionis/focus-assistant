@@ -435,3 +435,13 @@ body {
 .editable-title:hover {
     background: #f0f0f0;
 }
+
+/* Закрытые достижения */
+.achievement-locked {
+    opacity: 0.6;
+    background: var(--background-secondary);
+}
+
+.achievement-locked .task-item-title {
+    color: var(--text-secondary);
+}
