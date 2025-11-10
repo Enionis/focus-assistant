@@ -1601,82 +1601,44 @@ class FocusHelperApp {
     }
 
     renderSettings() {
-        const productiveTimeOptions = [
-            { value: 'morning', label: '🌅 Утро (6:00 - 12:00)' },
-            { value: 'afternoon', label: '☀️ День (12:00 - 18:00)' },
-            { value: 'evening', label: '🌆 Вечер (18:00 - 24:00)' },
-            { value: 'night', label: '🌙 Ночь (0:00 - 6:00)' }
-        ];
-
         return `
             <div class="app-container">
                 <div class="container">
-                    <h1 class="title">⚙️ Настройки Pomodoro</h1>
-                    
-                    <div class="panel">
-                        <label class="label">Длительность сессии Pomodoro (минуты)</label>
-                        <input 
-                            type="number" 
-                            id="pomodoroLength" 
-                            class="input" 
-                            min="5" 
-                            max="120" 
-                            step="5" 
-                            value="${this.settings.pomodoroLength || 25}"
-                            style="margin-bottom: 8px;"
-                        >
-                        <p class="caption">Рекомендуется: 25 минут</p>
+                    <div class="flex column center" style="text-align: center; margin-bottom: 32px;">
+                        <div style="font-size: 80px; margin-bottom: 16px;">⚙️</div>
+                        <h1 class="title">Настройки Pomodoro</h1>
+                        <p class="body">Настрой Pomodoro под себя для максимальной продуктивности.</p>
                     </div>
 
                     <div class="panel">
-                        <label class="label">Продуктивное время</label>
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            ${productiveTimeOptions.map(option => `
-                                <button 
-                                    class="btn secondary ${this.settings.productiveTime === option.value ? 'selected' : ''}" 
-                                    data-action="setProductiveTime" 
-                                    data-value="${option.value}"
-                                    style="text-align: left; justify-content: flex-start;"
-                                >
-                                    ${option.label}
-                                </button>
-                            `).join('')}
+                        <div class="label">Сколько часов в день ты готов уделять задачам?</div>
+                        <div class="grid cols-3 gap-12">
+                            <button class="btn secondary ${Number(this.settings.dailyHours) === 2 ? 'selected' : ''}" data-action="setDailyHours" data-value="2">2 часа</button>
+                            <button class="btn secondary ${Number(this.settings.dailyHours) === 4 ? 'selected' : ''}" data-action="setDailyHours" data-value="4">4 часа</button>
+                            <button class="btn secondary ${Number(this.settings.dailyHours) === 6 ? 'selected' : ''}" data-action="setDailyHours" data-value="6">6+ часов</button>
                         </div>
                     </div>
 
                     <div class="panel">
-                        <label class="label">Сколько часов в день уделять задачам</label>
-                        <input 
-                            type="number" 
-                            id="dailyHours" 
-                            class="input" 
-                            min="1" 
-                            max="12" 
-                            step="1" 
-                            value="${this.settings.dailyHours || 4}"
-                            style="margin-bottom: 8px;"
-                        >
-                        <p class="caption">Рекомендуется: 4-6 часов</p>
+                        <div class="label">В какое время ты наиболее продуктивен?</div>
+                        <div class="grid cols-2 gap-12">
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'morning' ? 'selected' : ''}" data-action="setProductiveTime" data-value="morning">🌅 Утро</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'afternoon' ? 'selected' : ''}" data-action="setProductiveTime" data-value="afternoon">☀️ День</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'evening' ? 'selected' : ''}" data-action="setProductiveTime" data-value="evening">🌆 Вечер</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'night' ? 'selected' : ''}" data-action="setProductiveTime" data-value="night">🌙 Ночь</button>
+                        </div>
                     </div>
 
                     <div class="panel">
-                        <label class="label">Длительность перерыва (минуты)</label>
-                        <input 
-                            type="number" 
-                            id="breakLength" 
-                            class="input" 
-                            min="1" 
-                            max="30" 
-                            step="1" 
-                            value="${this.settings.breakLength || 5}"
-                            style="margin-bottom: 8px;"
-                        >
-                        <p class="caption">Рекомендуется: 5 минут</p>
+                        <div class="label">Длина сессии Pomodoro</div>
+                        <div class="grid cols-3 gap-12">
+                            <button class="btn secondary ${Number(this.settings.pomodoroLength) === 25 ? 'selected' : ''}" data-action="setPomodoro" data-value="25">25 мин</button>
+                            <button class="btn secondary ${Number(this.settings.pomodoroLength) === 50 ? 'selected' : ''}" data-action="setPomodoro" data-value="50">50 мин</button>
+                            <button class="btn secondary ${Number(this.settings.pomodoroLength) === 90 ? 'selected' : ''}" data-action="setPomodoro" data-value="90">90 мин</button>
+                        </div>
                     </div>
 
-                    <button class="btn primary" data-action="saveSettings" style="margin-top: 16px;">
-                        💾 Сохранить настройки
-                    </button>
+                    <button class="btn primary" data-action="saveSettings">💾 Сохранить настройки</button>
                 </div>
                 ${this.renderNavigation()}
             </div>
