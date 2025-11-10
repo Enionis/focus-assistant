@@ -338,11 +338,17 @@ class FocusHelperApp {
         }
         this.isRunning = true;
         this.isPaused = false;
+        console.log('Таймер запущен, timeLeft:', this.timeLeft);
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
+                console.log('Таймер тик, timeLeft:', this.timeLeft);
                 if (this.timeLeft <= 0) {
+                    console.log('Таймер завершен, вызываем completePomodoro');
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
                     this.completePomodoro();
+                    return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
                 }
             }
             this.renderApp();
@@ -441,9 +447,11 @@ class FocusHelperApp {
     }
 
     completePomodoro() {
+        console.log('completePomodoro вызван');
         clearInterval(this.timerInterval);
         this.timerInterval = null;
         this.isRunning = false;
+        this.timeLeft = 0; // Убеждаемся, что время = 0
 
         // Убеждаемся, что stats инициализированы
         if (!this.stats) {
@@ -501,14 +509,14 @@ class FocusHelperApp {
 
         this.activeTask = null;
         
+        // Обновляем интерфейс перед показом модального окна
+        this.renderApp();
+        
         // Показываем модальное окно с поздравлением
+        console.log('Показываем модальное окно завершения, xpGained:', xpGained, 'levelUp:', levelUp);
         this.showPomodoroCompleteModal(xpGained, levelUp);
         
         this.syncWithBot();
-        // Не переходим сразу на home, ждем закрытия модального окна
-        setTimeout(() => {
-            this.navigateTo('home');
-        }, 100);
     }
 
     // Обновление серии дней (streak)
@@ -583,7 +591,15 @@ class FocusHelperApp {
 
     // Показать модальное окно завершения Pomodoro
     showPomodoroCompleteModal(xpGained, levelUp) {
+        console.log('showPomodoroCompleteModal вызван');
         const exercise = this.getRandomExercise();
+        
+        // Удаляем предыдущее модальное окно, если оно есть
+        const existingModal = document.querySelector('.pomodoro-complete-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
         const modal = document.createElement('div');
         modal.className = 'pomodoro-complete-modal';
         modal.style.cssText = `
@@ -654,16 +670,26 @@ class FocusHelperApp {
         document.body.appendChild(modal);
 
         const closeModal = () => {
+            console.log('Закрываем модальное окно');
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
+            // Переходим на главный экран после закрытия модального окна
+            this.navigateTo('home');
         };
 
-        const closeBtn = document.getElementById('closePomodoroModal');
-        closeBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+        // Ждем, пока DOM обновится, прежде чем добавлять обработчики
+        setTimeout(() => {
+            const closeBtn = document.getElementById('closePomodoroModal');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeModal);
+            }
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+        }, 100);
+        
+        console.log('Модальное окно добавлено в DOM');
     }
 
     // Быстрый старт Pomodoro (из навигации)
