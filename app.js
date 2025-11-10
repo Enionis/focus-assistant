@@ -459,12 +459,14 @@ class FocusHelperApp {
         }
 
         // Обновление статистики (упрощенная геймификация)
+        const xpGained = 10;
         this.stats.totalSessions = (this.stats.totalSessions || 0) + 1;
         // Для тестирования считаем как 25 минут, чтобы статистика была корректной
         this.stats.totalFocusTime = (this.stats.totalFocusTime || 0) + 25; // В реальности: this.settings.pomodoroLength
-        this.stats.xp = (this.stats.xp || 0) + 10;
         const oldLevel = this.stats.level || 1;
+        this.stats.xp = (this.stats.xp || 0) + xpGained;
         this.stats.level = Math.floor(this.stats.xp / 100) + 1;
+        const levelUp = this.stats.level > oldLevel;
 
         // Обновление серии дней (streak)
         this.updateStreak();
@@ -498,9 +500,15 @@ class FocusHelperApp {
         }
 
         this.activeTask = null;
-        alert('Сессия завершена! Отдохни 5 минут.');
+        
+        // Показываем модальное окно с поздравлением
+        this.showPomodoroCompleteModal(xpGained, levelUp);
+        
         this.syncWithBot();
-        this.navigateTo('home');
+        // Не переходим сразу на home, ждем закрытия модального окна
+        setTimeout(() => {
+            this.navigateTo('home');
+        }, 100);
     }
 
     // Обновление серии дней (streak)
@@ -508,12 +516,21 @@ class FocusHelperApp {
         const today = new Date().toDateString(); // Получаем дату в формате "Mon Jan 01 2024"
         const lastSessionDate = localStorage.getItem('lastPomodoroDate');
         
+        // Инициализируем streak, если его нет
+        if (this.stats.currentStreak === undefined || this.stats.currentStreak === null) {
+            this.stats.currentStreak = 0;
+        }
+        if (this.stats.longestStreak === undefined || this.stats.longestStreak === null) {
+            this.stats.longestStreak = 0;
+        }
+        
         if (!lastSessionDate) {
             // Первая сессия - начинаем серию
             this.stats.currentStreak = 1;
             localStorage.setItem('lastPomodoroDate', today);
         } else if (lastSessionDate === today) {
             // Сессия уже была сегодня - не увеличиваем streak, но обновляем дату
+            // Это нормально - streak увеличивается только при переходе на новый день
             localStorage.setItem('lastPomodoroDate', today);
         } else {
             // Проверяем, была ли сессия вчера
@@ -523,7 +540,7 @@ class FocusHelperApp {
             
             if (lastSessionDate === yesterdayString) {
                 // Сессия была вчера - продолжаем серию
-                this.stats.currentStreak++;
+                this.stats.currentStreak = (this.stats.currentStreak || 0) + 1;
                 localStorage.setItem('lastPomodoroDate', today);
             } else {
                 // Прошло больше дня - сбрасываем серию
@@ -540,7 +557,112 @@ class FocusHelperApp {
         console.log('Streak updated:', {
             currentStreak: this.stats.currentStreak,
             longestStreak: this.stats.longestStreak,
-            lastSessionDate: localStorage.getItem('lastPomodoroDate')
+            lastSessionDate: localStorage.getItem('lastPomodoroDate'),
+            today: today
+        });
+    }
+
+    // Получить случайную физ разминку
+    getRandomExercise() {
+        const exercises = [
+            "💪 10 отжиманий",
+            "🏃 20 приседаний",
+            "🤸 30 секунд планки",
+            "🧘 5 минут растяжки",
+            "🚶 Пройдись по комнате 2 минуты",
+            "👆 20 наклонов головы в стороны",
+            "🔄 10 круговых движений плечами",
+            "🦵 15 выпадов на каждую ногу",
+            "🤲 10 подъемов на носки",
+            "💨 Глубокое дыхание: 5 вдохов-выдохов",
+            "👋 20 махов руками",
+            "🦶 15 подъемов коленей"
+        ];
+        return exercises[Math.floor(Math.random() * exercises.length)];
+    }
+
+    // Показать модальное окно завершения Pomodoro
+    showPomodoroCompleteModal(xpGained, levelUp) {
+        const exercise = this.getRandomExercise();
+        const modal = document.createElement('div');
+        modal.className = 'pomodoro-complete-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.3s ease;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.className = 'pomodoro-complete-modal-content';
+        modalContent.style.cssText = `
+            background: white;
+            border-radius: 24px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+        `;
+
+        let levelUpText = '';
+        if (levelUp) {
+            levelUpText = `<div style="color: var(--primary); font-weight: bold; margin-bottom: 16px; font-size: 18px;">🎉 Новый уровень! 🎉</div>`;
+        }
+
+        modalContent.innerHTML = `
+            <div style="font-size: 64px; margin-bottom: 16px;">🎉</div>
+            <h2 style="font-size: 24px; margin-bottom: 8px; color: var(--text);">Молодец!</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">Сессия завершена успешно</p>
+            ${levelUpText}
+            <div style="background: linear-gradient(135deg, var(--primary), var(--accent)); 
+                        color: white; 
+                        padding: 16px; 
+                        border-radius: 12px; 
+                        margin-bottom: 24px;">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">Получено XP</div>
+                <div style="font-size: 32px; font-weight: bold;">+${xpGained}</div>
+            </div>
+            <div style="background: var(--background-secondary); 
+                        padding: 20px; 
+                        border-radius: 12px; 
+                        margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text);">
+                    ⏰ Отдохни 5 минут
+                </div>
+                <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px;">
+                    Предлагаем сделать физ разминку:
+                </div>
+                <div style="font-size: 18px; font-weight: 600; color: var(--primary);">
+                    ${exercise}
+                </div>
+            </div>
+            <button class="btn primary" style="width: 100%;" id="closePomodoroModal">
+                Продолжить
+            </button>
+        `;
+
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        const closeModal = () => {
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
+        };
+
+        const closeBtn = document.getElementById('closePomodoroModal');
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
         });
     }
 

@@ -397,6 +397,26 @@ body {
     100% { transform: scale(1); }
 }
 
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .timer-container.pulsing .timer-circle {
     animation: pulse 2s ease-in-out infinite;
 }
