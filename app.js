@@ -1411,14 +1411,18 @@ class FocusHelperApp {
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="editSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Редактировать">✏️</button>
                         <button class="icon-btn" data-action="deleteSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Удалить">🗑️</button>
-                        ${canStart ? `
-                        <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
-                        ` : `
-                        <button class="btn secondary" style="padding: 8px 12px; font-size: 14px; opacity: 0.5; cursor: not-allowed;" disabled title="Сначала завершите предыдущие подзадачи">⏸️ Заблокировано</button>
-                        `}
                     </div>
                     ` : ''}
                 </div>
+                ${!isSubTaskDone && !isTaskDone ? `
+                <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+                    ${canStart ? `
+                    <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
+                    ` : `
+                    <button class="btn secondary" style="padding: 8px 12px; font-size: 14px; opacity: 0.5; cursor: not-allowed;" disabled title="Сначала завершите предыдущие подзадачи">⏸️ Заблокировано</button>
+                    `}
+                </div>
+                ` : ''}
                 ${st.completedPomodoros > 0 ? `
                     <div class="progress-bar" style="margin-top: 12px;">
                         <div class="progress-fill" style="width: ${Math.min((st.completedPomodoros / st.estimatedPomodoros) * 100, 100)}%;"></div>
