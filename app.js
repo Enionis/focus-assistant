@@ -421,28 +421,24 @@ class FocusHelperApp {
         this.isPaused = false;
         console.log('Таймер запущен, timeLeft:', this.timeLeft);
         
-        // Для плавной анимации обновляем UI чаще (каждые 100мс)
-        let lastUpdateTime = Date.now();
+        // Обновляем время каждую секунду
+        // UI обновляем раз в секунду, чтобы не прерывать CSS анимацию пульсации
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
-                const now = Date.now();
-                // Обновляем время каждую секунду
-                if (now - lastUpdateTime >= 1000) {
-                    this.timeLeft--;
-                    lastUpdateTime = now;
-                    console.log('Таймер тик, timeLeft:', this.timeLeft);
-                    if (this.timeLeft <= 0) {
-                        console.log('Таймер завершен, вызываем completePomodoro');
-                        clearInterval(this.timerInterval);
-                        this.timerInterval = null;
-                        this.completePomodoro();
-                        return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
-                    }
+                this.timeLeft--;
+                console.log('Таймер тик, timeLeft:', this.timeLeft);
+                if (this.timeLeft <= 0) {
+                    console.log('Таймер завершен, вызываем completePomodoro');
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                    this.completePomodoro();
+                    return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
                 }
             }
-            // Обновляем UI каждые 100мс для плавной анимации прогресса
+            // Обновляем UI раз в секунду - этого достаточно для обновления времени
+            // CSS анимация пульсации будет работать независимо
             this.renderApp();
-        }, 100);
+        }, 1000);
         this.renderApp();
     }
 
@@ -1517,18 +1513,8 @@ class FocusHelperApp {
         const seconds = this.timeLeft % 60;
         // Для расчета прогресса используем текущее значение pomodoroLength
         const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
-        // Для плавной анимации используем более точный расчет прогресса
-        // Если таймер запущен, учитываем прошедшее время с момента последнего обновления
-        let progress = 0;
-        if (totalTime > 0) {
-            if (this.isRunning && !this.isPaused && this.timerInterval) {
-                // Для плавной анимации прогресс рассчитывается на основе оставшегося времени
-                progress = ((totalTime - this.timeLeft) / totalTime) * 100;
-            } else {
-                progress = ((totalTime - this.timeLeft) / totalTime) * 100;
-            }
-            progress = Math.min(Math.max(progress, 0), 100); // Ограничиваем от 0 до 100%
-        }
+        // Расчет прогресса для плавной анимации
+        const progress = totalTime > 0 ? Math.min(Math.max(((totalTime - this.timeLeft) / totalTime) * 100, 0), 100) : 0;
 
         // Если таймер еще не запущен, показываем кнопку "Начать"
         if (!this.isRunning && !this.isPaused) {
