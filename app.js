@@ -1786,28 +1786,41 @@ class FocusHelperApp {
         );
 
         // Проверяем, какие достижения разблокированы
-        const achievements = availableAchievements.map(ach => {
-            const unlocked = hasAchievement(ach.id);
-            
-            return {
-                ...ach,
-                unlocked
-            };
-        }).map(ach => `
-            <div class="task-item ${ach.unlocked ? '' : 'achievement-locked'}">
+        // Достижение считается разблокированным только если оно есть в stats.achievements
+        const achievements = availableAchievements
+            .filter(ach => hasAchievement(ach.id)) // Показываем только те, что уже разблокированы
+            .map(ach => `
+            <div class="task-item">
                 <div class="flex center">
-                    <span class="emoji-icon" style="opacity: ${ach.unlocked ? '1' : '0.3'};">${ach.icon}</span>
+                    <span class="emoji-icon" style="opacity: 1;">${ach.icon}</span>
                     <div class="task-item-content" style="flex: 1;">
-                        <div class="task-item-title" style="opacity: ${ach.unlocked ? '1' : '0.5'};">${ach.title}</div>
-                        <div class="task-item-meta" style="opacity: ${ach.unlocked ? '0.7' : '0.4'};">${ach.description}</div>
+                        <div class="task-item-title" style="opacity: 1;">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity: 0.7;">${ach.description}</div>
                     </div>
-                    ${ach.unlocked ? '<span style="color: var(--success); font-size: 20px;">✓</span>' : '<span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>'}
+                    <span style="color: var(--success); font-size: 20px;">✓</span>
                 </div>
             </div>
         `).join('');
 
-        // Показываем закрытые достижения (следующие по уровню)
-        const lockedAchievements = allAchievements
+        // Показываем закрытые достижения:
+        // 1. Те, что доступны по уровню, но еще не разблокированы
+        // 2. Те, что еще не доступны по уровню
+        const availableButLocked = availableAchievements
+            .filter(ach => !hasAchievement(ach.id)) // Доступны по уровню, но еще не разблокированы
+            .map(ach => `
+            <div class="task-item achievement-locked">
+                <div class="flex center">
+                    <span class="emoji-icon" style="opacity: 0.3;">${ach.icon}</span>
+                    <div class="task-item-content" style="flex: 1;">
+                        <div class="task-item-title" style="opacity: 0.5;">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity: 0.4;">${ach.description}</div>
+                    </div>
+                    <span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>
+                </div>
+            </div>
+        `).join('');
+        
+        const levelLockedAchievements = allAchievements
             .filter(ach => this.stats.level < ach.unlockLevel)
             .slice(0, 3) // Показываем только 3 следующих
             .map(ach => `
@@ -1862,11 +1875,11 @@ class FocusHelperApp {
                     </div>
                     <div class="panel">
                         <h2 class="subtitle" style="margin-bottom: 16px;">Достижения</h2>
-                        <div class="task-list">${achievements}</div>
-                        ${lockedAchievements ? `
+                        <div class="task-list">${achievements || '<p class="caption" style="opacity: 0.6;">Пока нет разблокированных достижений</p>'}</div>
+                        ${(availableButLocked || levelLockedAchievements) ? `
                             <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);">
                                 <h3 class="subtitle" style="margin-bottom: 16px; opacity: 0.6;">Следующие достижения</h3>
-                                <div class="task-list">${lockedAchievements}</div>
+                                <div class="task-list">${availableButLocked}${levelLockedAchievements}</div>
                             </div>
                         ` : ''}
                     </div>
