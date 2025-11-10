@@ -3,7 +3,13 @@ class FocusHelperApp {
         this.currentView = 'onboarding'; // Начать с онбординга
         this.userData = null;
         this.eventListenersAttached = false;
-        this.apiBaseUrl = 'http://localhost:8000'; 
+        // URL для синхронизации с ботом
+        // Для локальной разработки: 'http://localhost:8000'
+        // Для продакшена: укажите URL вашего API сервера
+        this.apiBaseUrl = 'http://localhost:8000'; // TODO: Замените на URL вашего API сервера для синхронизации
+        
+        // Получаем данные пользователя из Max Web App SDK
+        this.initUserData(); 
         this.timerInterval = null;
         this.timeLeft = 25 * 60;
         this.isRunning = false;
@@ -29,6 +35,33 @@ class FocusHelperApp {
             achievements: []
         };
         this.init();
+    }
+
+    // Инициализация данных пользователя из Max Web App SDK
+    initUserData() {
+        try {
+            // Проверяем наличие Max Web App SDK
+            if (typeof window !== 'undefined' && window.MaxWebApp) {
+                // Получаем данные пользователя из SDK
+                const maxWebApp = window.MaxWebApp;
+                if (maxWebApp.getUserData) {
+                    this.userData = maxWebApp.getUserData();
+                } else if (maxWebApp.user) {
+                    this.userData = { userId: maxWebApp.user.id || maxWebApp.user.user_id };
+                } else if (maxWebApp.initData) {
+                    // Пробуем получить из initData
+                    const initData = maxWebApp.initData;
+                    if (initData.user) {
+                        this.userData = { userId: initData.user.id || initData.user.user_id };
+                    }
+                }
+                console.log('Данные пользователя из Max Web App SDK:', this.userData);
+            } else {
+                console.log('Max Web App SDK не найден, данные будут храниться только локально');
+            }
+        } catch (error) {
+            console.warn('Ошибка получения данных пользователя:', error);
+        }
     }
 
     // Инициализация
@@ -160,9 +193,30 @@ class FocusHelperApp {
     }
 
     async syncWithBot() {
-        if (!this.userData?.userId) {
+        // Получаем userId из userData или из Max Web App SDK
+        let userId = this.userData?.userId;
+        
+        // Если userId нет, пытаемся получить из Max Web App SDK напрямую
+        if (!userId && typeof window !== 'undefined' && window.MaxWebApp) {
+            try {
+                const maxWebApp = window.MaxWebApp;
+                if (maxWebApp.user?.id) {
+                    userId = maxWebApp.user.id;
+                } else if (maxWebApp.user?.user_id) {
+                    userId = maxWebApp.user.user_id;
+                } else if (maxWebApp.initData?.user?.id) {
+                    userId = maxWebApp.initData.user.id;
+                } else if (maxWebApp.initData?.user?.user_id) {
+                    userId = maxWebApp.initData.user.user_id;
+                }
+            } catch (e) {
+                console.warn('Не удалось получить userId из Max Web App SDK:', e);
+            }
+        }
+        
+        if (!userId) {
             // Если нет userId, данные хранятся только локально
-            console.log('ℹ️ Данные хранятся только локально (localStorage)');
+            console.log('ℹ️ Данные хранятся только локально (localStorage). userId не найден.');
             return;
         }
 
@@ -171,7 +225,7 @@ class FocusHelperApp {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    userId: this.userData.userId,
+                    userId: userId,
                     settings: this.settings,
                     tasks: this.tasks,
                     stats: this.stats
