@@ -11,7 +11,7 @@ class FocusHelperApp {
         // Получаем данные пользователя из Max Web App SDK
         this.initUserData(); 
         this.timerInterval = null;
-        this.timeLeft = 25 * 60;
+        this.timeLeft = 30; // 30 секунд для тестирования (обычно 25 * 60)
         this.isRunning = false;
         this.isPaused = false;
         this.activeTask = null;
@@ -20,7 +20,7 @@ class FocusHelperApp {
         this.settings = {
             dailyHours: 4,
             productiveTime: 'morning',
-            pomodoroLength: 25,
+            pomodoroLength: 0.5, // 0.5 минуты (30 секунд) для тестирования (обычно 25)
             breakLength: 5,
             isOnboarded: false
         };
@@ -99,7 +99,7 @@ class FocusHelperApp {
             this.settings = {
                 dailyHours: 4,
                 productiveTime: 'morning',
-                pomodoroLength: 25,
+                pomodoroLength: 0.5, // 0.5 минуты (30 секунд) для тестирования (обычно 25)
                 breakLength: 5,
                 isOnboarded: false,
                 ...savedSettings
@@ -322,7 +322,7 @@ class FocusHelperApp {
             return;
         }
         this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId), focusText: focusText || '' };
-        this.timeLeft = (this.settings.pomodoroLength || 25) * 60;
+        this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60); // 30 секунд для тестирования
         this.isRunning = false; // Не запускаем сразу
         this.isPaused = false;
         this.navigateTo('pomodoro');
@@ -445,7 +445,8 @@ class FocusHelperApp {
 
         // Обновление статистики (упрощенная геймификация)
         this.stats.totalSessions++;
-        this.stats.totalFocusTime += this.settings.pomodoroLength;
+        // Для тестирования считаем как 25 минут, чтобы статистика была корректной
+        this.stats.totalFocusTime += 25; // В реальности: this.settings.pomodoroLength
         this.stats.xp += 10;
         const oldLevel = this.stats.level;
         this.stats.level = Math.floor(this.stats.xp / 100) + 1;
