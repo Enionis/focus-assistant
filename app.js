@@ -420,20 +420,29 @@ class FocusHelperApp {
         this.isRunning = true;
         this.isPaused = false;
         console.log('Таймер запущен, timeLeft:', this.timeLeft);
+        
+        // Для плавной анимации обновляем UI чаще (каждые 100мс)
+        let lastUpdateTime = Date.now();
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
-                this.timeLeft--;
-                console.log('Таймер тик, timeLeft:', this.timeLeft);
-                if (this.timeLeft <= 0) {
-                    console.log('Таймер завершен, вызываем completePomodoro');
-                    clearInterval(this.timerInterval);
-                    this.timerInterval = null;
-                    this.completePomodoro();
-                    return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
+                const now = Date.now();
+                // Обновляем время каждую секунду
+                if (now - lastUpdateTime >= 1000) {
+                    this.timeLeft--;
+                    lastUpdateTime = now;
+                    console.log('Таймер тик, timeLeft:', this.timeLeft);
+                    if (this.timeLeft <= 0) {
+                        console.log('Таймер завершен, вызываем completePomodoro');
+                        clearInterval(this.timerInterval);
+                        this.timerInterval = null;
+                        this.completePomodoro();
+                        return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
+                    }
                 }
             }
+            // Обновляем UI каждые 100мс для плавной анимации прогресса
             this.renderApp();
-        }, 1000);
+        }, 100);
         this.renderApp();
     }
 
@@ -550,8 +559,8 @@ class FocusHelperApp {
         // Обновление статистики (упрощенная геймификация)
         const xpGained = 10;
         this.stats.totalSessions = (this.stats.totalSessions || 0) + 1;
-        // Для тестирования считаем как 25 минут, чтобы статистика была корректной
-        this.stats.totalFocusTime = (this.stats.totalFocusTime || 0) + 25; // В реальности: this.settings.pomodoroLength
+        // Используем реальное значение pomodoroLength для статистики
+        this.stats.totalFocusTime = (this.stats.totalFocusTime || 0) + (this.settings.pomodoroLength || 0.5);
         const oldLevel = this.stats.level || 1;
         this.stats.xp = (this.stats.xp || 0) + xpGained;
         this.stats.level = Math.floor(this.stats.xp / 100) + 1;
@@ -1506,9 +1515,20 @@ class FocusHelperApp {
 
         const minutes = Math.floor(this.timeLeft / 60);
         const seconds = this.timeLeft % 60;
-        // Для расчета прогресса используем текущее значение pomodoroLength (0.5 для тестирования)
+        // Для расчета прогресса используем текущее значение pomodoroLength
         const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
-        const progress = totalTime > 0 ? ((totalTime - this.timeLeft) / totalTime) * 100 : 0;
+        // Для плавной анимации используем более точный расчет прогресса
+        // Если таймер запущен, учитываем прошедшее время с момента последнего обновления
+        let progress = 0;
+        if (totalTime > 0) {
+            if (this.isRunning && !this.isPaused && this.timerInterval) {
+                // Для плавной анимации прогресс рассчитывается на основе оставшегося времени
+                progress = ((totalTime - this.timeLeft) / totalTime) * 100;
+            } else {
+                progress = ((totalTime - this.timeLeft) / totalTime) * 100;
+            }
+            progress = Math.min(Math.max(progress, 0), 100); // Ограничиваем от 0 до 100%
+        }
 
         // Если таймер еще не запущен, показываем кнопку "Начать"
         if (!this.isRunning && !this.isPaused) {
