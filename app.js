@@ -1600,6 +1600,89 @@ class FocusHelperApp {
         `;
     }
 
+    renderSettings() {
+        const productiveTimeOptions = [
+            { value: 'morning', label: '🌅 Утро (6:00 - 12:00)' },
+            { value: 'afternoon', label: '☀️ День (12:00 - 18:00)' },
+            { value: 'evening', label: '🌆 Вечер (18:00 - 24:00)' },
+            { value: 'night', label: '🌙 Ночь (0:00 - 6:00)' }
+        ];
+
+        return `
+            <div class="app-container">
+                <div class="container">
+                    <h1 class="title">⚙️ Настройки Pomodoro</h1>
+                    
+                    <div class="panel">
+                        <label class="label">Длительность сессии Pomodoro (минуты)</label>
+                        <input 
+                            type="number" 
+                            id="pomodoroLength" 
+                            class="input" 
+                            min="5" 
+                            max="120" 
+                            step="5" 
+                            value="${this.settings.pomodoroLength || 25}"
+                            style="margin-bottom: 8px;"
+                        >
+                        <p class="caption">Рекомендуется: 25 минут</p>
+                    </div>
+
+                    <div class="panel">
+                        <label class="label">Продуктивное время</label>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            ${productiveTimeOptions.map(option => `
+                                <button 
+                                    class="btn secondary ${this.settings.productiveTime === option.value ? 'selected' : ''}" 
+                                    data-action="setProductiveTime" 
+                                    data-value="${option.value}"
+                                    style="text-align: left; justify-content: flex-start;"
+                                >
+                                    ${option.label}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <label class="label">Сколько часов в день уделять задачам</label>
+                        <input 
+                            type="number" 
+                            id="dailyHours" 
+                            class="input" 
+                            min="1" 
+                            max="12" 
+                            step="1" 
+                            value="${this.settings.dailyHours || 4}"
+                            style="margin-bottom: 8px;"
+                        >
+                        <p class="caption">Рекомендуется: 4-6 часов</p>
+                    </div>
+
+                    <div class="panel">
+                        <label class="label">Длительность перерыва (минуты)</label>
+                        <input 
+                            type="number" 
+                            id="breakLength" 
+                            class="input" 
+                            min="1" 
+                            max="30" 
+                            step="1" 
+                            value="${this.settings.breakLength || 5}"
+                            style="margin-bottom: 8px;"
+                        >
+                        <p class="caption">Рекомендуется: 5 минут</p>
+                    </div>
+
+                    <button class="btn primary" data-action="saveSettings" style="margin-top: 16px;">
+                        💾 Сохранить настройки
+                    </button>
+                </div>
+                ${this.renderNavigation()}
+            </div>
+        `;
+    }
+
     renderStatistics() {
         console.log('renderStatistics called, current stats:', this.stats);
         
@@ -1855,6 +1938,9 @@ class FocusHelperApp {
             case 'statistics':
                 content = this.renderStatistics();
                 break;
+            case 'settings':
+                content = this.renderSettings();
+                break;
         }
 
         appDiv.innerHTML = content;
@@ -1882,6 +1968,10 @@ class FocusHelperApp {
                 <button class="nav-item ${this.currentView === 'statistics' ? 'active' : ''}" data-action="navigate" data-view="statistics">
                     <span class="icon">📊</span>
                     <span class="text">Статистика</span>
+                </button>
+                <button class="nav-item ${this.currentView === 'settings' ? 'active' : ''}" data-action="navigate" data-view="settings">
+                    <span class="icon">⚙️</span>
+                    <span class="text">Настройки</span>
                 </button>
             </nav>
         `;
@@ -1975,6 +2065,23 @@ class FocusHelperApp {
                 this.settings.breakLength = parseInt(value) / 5;
                 this.saveSettings(this.settings); // Сохраняем сразу
                 this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
+            } else if (action === 'saveSettings') {
+                // Сохраняем настройки из формы
+                const pomodoroLength = parseInt(document.getElementById('pomodoroLength')?.value) || this.settings.pomodoroLength;
+                const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
+                const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
+                
+                this.settings.pomodoroLength = pomodoroLength;
+                this.settings.dailyHours = dailyHours;
+                this.settings.breakLength = breakLength;
+                
+                this.saveSettings(this.settings);
+                
+                // Показываем уведомление об успешном сохранении
+                alert('✅ Настройки сохранены!');
+                
+                // Возвращаемся на главный экран
+                this.navigateTo('home');
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
             } else if (action === 'createTask') {
