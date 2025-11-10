@@ -318,11 +318,49 @@ class FocusHelperApp {
     }
 
     // Pomodoro логика
+    // Проверка, завершена ли подзадача
+    isSubTaskCompleted(subTask) {
+        return subTask.completedPomodoros >= subTask.estimatedPomodoros;
+    }
+
+    // Проверка, завершена ли задача (все подзадачи выполнены)
+    isTaskCompleted(task) {
+        if (!task || !task.subTasks || task.subTasks.length === 0) {
+            return false;
+        }
+        return task.subTasks.every(st => this.isSubTaskCompleted(st));
+    }
+
     startPomodoro(taskId, subTaskId, focusText = null) {
         if (!taskId || !subTaskId) {
             console.error('startPomodoro: missing taskId or subTaskId', { taskId, subTaskId });
             return;
         }
+        
+        const task = this.tasks.find(t => String(t.id) === String(taskId));
+        if (!task) {
+            console.error('startPomodoro: task not found', { taskId });
+            return;
+        }
+        
+        const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
+        if (!subTask) {
+            console.error('startPomodoro: subTask not found', { subTaskId });
+            return;
+        }
+        
+        // Проверяем, не завершена ли подзадача
+        if (this.isSubTaskCompleted(subTask)) {
+            alert('Эта подзадача уже завершена! Все сессии Pomodoro выполнены.');
+            return;
+        }
+        
+        // Проверяем, не завершена ли вся задача
+        if (this.isTaskCompleted(task)) {
+            alert('Эта задача уже завершена! Все подзадачи выполнены.');
+            return;
+        }
+        
         this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId), focusText: focusText || '' };
         this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60); // 30 секунд для тестирования
         this.isRunning = false; // Не запускаем сразу
@@ -1154,26 +1192,33 @@ class FocusHelperApp {
     }
 
     renderHome() {
-        const taskList = this.tasks.map(task => `
-            <div class="task-item">
+        const taskList = this.tasks.map(task => {
+            const isTaskDone = this.isTaskCompleted(task);
+            return `
+            <div class="task-item" ${isTaskDone ? 'style="opacity: 0.7;"' : ''}>
                 <div class="task-item-header">
                     <div class="flex center">
                         <div class="emoji-icon">📝</div>
                         <div class="task-item-content">
-                            <div class="task-item-title">${task.title}</div>
-                            <div class="task-item-meta">${task.subTasks.length} шагов • ${task.completedPomodoros}/${task.totalPomodoros} сессий</div>
+                            <div class="task-item-title">
+                                ${task.title} ${isTaskDone ? '✅' : ''}
+                            </div>
+                            <div class="task-item-meta">${task.subTasks.length} шагов • ${task.completedPomodoros}/${task.totalPomodoros} сессий ${isTaskDone ? '• Завершено' : ''}</div>
                         </div>
                     </div>
+                    ${!isTaskDone ? `
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="viewTask" data-id="${task.id}" title="Просмотр">👁️</button>
                         <button class="icon-btn" data-action="deleteTask" data-id="${task.id}" title="Удалить">🗑️</button>
                     </div>
+                    ` : ''}
                 </div>
                 <div class="progress-bar" style="margin-top: 12px;">
-                    <div class="progress-fill" style="width: ${ (task.completedPomodoros / task.totalPomodoros) * 100 }%;"></div>
+                    <div class="progress-fill" style="width: ${Math.min((task.completedPomodoros / task.totalPomodoros) * 100, 100)}%;"></div>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         return `
             <div class="app-container">
@@ -1215,29 +1260,37 @@ class FocusHelperApp {
         const task = this.tasks.find(t => t.id === taskId);
         if (!task) return this.renderHome();
 
-        const subTasksList = task.subTasks.map((st, index) => `
-            <div class="task-item" data-subtask-id="${st.id}">
+        const isTaskDone = this.isTaskCompleted(task);
+        const subTasksList = task.subTasks.map((st, index) => {
+            const isSubTaskDone = this.isSubTaskCompleted(st);
+            return `
+            <div class="task-item" data-subtask-id="${st.id}" ${isSubTaskDone ? 'style="opacity: 0.7;"' : ''}>
                 <div class="task-item-header">
                     <div class="flex center" style="flex: 1;">
                         <div class="task-item-number">${index + 1}</div>
                         <div class="task-item-content" style="flex: 1;">
-                            <div class="task-item-title editable-title" data-editable="true" data-subtask-id="${st.id}">${st.title}</div>
-                            <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий</div>
+                            <div class="task-item-title editable-title" data-editable="true" data-subtask-id="${st.id}">
+                                ${st.title} ${isSubTaskDone ? '✅' : ''}
+                            </div>
+                            <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий ${isSubTaskDone ? '(Завершено)' : ''}</div>
                         </div>
                     </div>
+                    ${!isSubTaskDone && !isTaskDone ? `
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="editSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Редактировать">✏️</button>
                         <button class="icon-btn" data-action="deleteSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Удалить">🗑️</button>
                         <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
                     </div>
+                    ` : ''}
                 </div>
                 ${st.completedPomodoros > 0 ? `
                     <div class="progress-bar" style="margin-top: 12px;">
-                        <div class="progress-fill" style="width: ${ (st.completedPomodoros / st.estimatedPomodoros) * 100 }%;"></div>
+                        <div class="progress-fill" style="width: ${Math.min((st.completedPomodoros / st.estimatedPomodoros) * 100, 100)}%;"></div>
                     </div>
                 ` : ''}
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         return `
             <div class="app-container">
@@ -1273,7 +1326,10 @@ class FocusHelperApp {
                         </div>
                     </div>
                     <div class="panel">
-                        <h2 class="subtitle" style="margin-bottom: 16px;">План действий</h2>
+                        <h2 class="subtitle" style="margin-bottom: 16px;">
+                            План действий 
+                            ${isTaskDone ? '<span style="color: var(--primary); font-size: 14px;">✅ Завершено</span>' : ''}
+                        </h2>
                         <div class="task-list">${subTasksList}</div>
                     </div>
                 </div>
