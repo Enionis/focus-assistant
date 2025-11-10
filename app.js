@@ -44,7 +44,15 @@ class FocusHelperApp {
     async loadData() {
         try {
             // Локальное хранение
-            this.settings = JSON.parse(localStorage.getItem('focus_settings') || '{}');
+            const savedSettings = JSON.parse(localStorage.getItem('focus_settings') || '{}');
+            this.settings = {
+                dailyHours: 4,
+                productiveTime: 'morning',
+                pomodoroLength: 25,
+                breakLength: 5,
+                isOnboarded: false,
+                ...savedSettings
+            };
             this.tasks = JSON.parse(localStorage.getItem('focus_tasks') || '[]');
             this.stats = JSON.parse(localStorage.getItem('focus_stats') || '{}');
 
@@ -59,6 +67,11 @@ class FocusHelperApp {
                     xp: 0,
                     achievements: []
                 };
+            }
+            
+            // Убеждаемся, что achievements всегда массив
+            if (!Array.isArray(this.stats.achievements)) {
+                this.stats.achievements = [];
             }
 
             // Синхронизация с ботом
@@ -85,6 +98,10 @@ class FocusHelperApp {
                     xp: 0,
                     achievements: []
                 };
+            }
+            // Убеждаемся, что achievements всегда массив
+            if (!Array.isArray(this.stats.achievements)) {
+                this.stats.achievements = [];
             }
         }
     }
@@ -717,28 +734,28 @@ class FocusHelperApp {
                     <div class="panel">
                         <div class="label">Сколько часов в день ты готов уделять задачам?</div>
                         <div class="grid cols-3 gap-12">
-                            <button class="btn secondary ${this.settings.dailyHours === 2 ? 'selected' : ''}" data-action="setDailyHours" data-value="2">2 часа</button>
-                            <button class="btn secondary ${this.settings.dailyHours === 4 ? 'selected' : ''}" data-action="setDailyHours" data-value="4">4 часа</button>
-                            <button class="btn secondary ${this.settings.dailyHours === 6 ? 'selected' : ''}" data-action="setDailyHours" data-value="6">6+ часов</button>
+                            <button class="btn secondary ${Number(this.settings.dailyHours) === 2 ? 'selected' : ''}" data-action="setDailyHours" data-value="2">2 часа</button>
+                            <button class="btn secondary ${Number(this.settings.dailyHours) === 4 ? 'selected' : ''}" data-action="setDailyHours" data-value="4">4 часа</button>
+                            <button class="btn secondary ${Number(this.settings.dailyHours) === 6 ? 'selected' : ''}" data-action="setDailyHours" data-value="6">6+ часов</button>
                         </div>
                     </div>
 
                     <div class="panel">
                         <div class="label">В какое время ты наиболее продуктивен?</div>
                         <div class="grid cols-2 gap-12">
-                            <button class="btn secondary ${this.settings.productiveTime === 'morning' ? 'selected' : ''}" data-action="setProductiveTime" data-value="morning">🌅 Утро</button>
-                            <button class="btn secondary ${this.settings.productiveTime === 'afternoon' ? 'selected' : ''}" data-action="setProductiveTime" data-value="afternoon">☀️ День</button>
-                            <button class="btn secondary ${this.settings.productiveTime === 'evening' ? 'selected' : ''}" data-action="setProductiveTime" data-value="evening">🌆 Вечер</button>
-                            <button class="btn secondary ${this.settings.productiveTime === 'night' ? 'selected' : ''}" data-action="setProductiveTime" data-value="night">🌙 Ночь</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'morning' ? 'selected' : ''}" data-action="setProductiveTime" data-value="morning">🌅 Утро</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'afternoon' ? 'selected' : ''}" data-action="setProductiveTime" data-value="afternoon">☀️ День</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'evening' ? 'selected' : ''}" data-action="setProductiveTime" data-value="evening">🌆 Вечер</button>
+                            <button class="btn secondary ${String(this.settings.productiveTime) === 'night' ? 'selected' : ''}" data-action="setProductiveTime" data-value="night">🌙 Ночь</button>
                         </div>
                     </div>
 
                     <div class="panel">
                         <div class="label">Длина сессии Pomodoro</div>
                         <div class="grid cols-3 gap-12">
-                            <button class="btn secondary ${this.settings.pomodoroLength === 25 ? 'selected' : ''}" data-action="setPomodoro" data-value="25">25 мин</button>
-                            <button class="btn secondary ${this.settings.pomodoroLength === 50 ? 'selected' : ''}" data-action="setPomodoro" data-value="50">50 мин</button>
-                            <button class="btn secondary ${this.settings.pomodoroLength === 90 ? 'selected' : ''}" data-action="setPomodoro" data-value="90">90 мин</button>
+                            <button class="btn secondary ${Number(this.settings.pomodoroLength) === 25 ? 'selected' : ''}" data-action="setPomodoro" data-value="25">25 мин</button>
+                            <button class="btn secondary ${Number(this.settings.pomodoroLength) === 50 ? 'selected' : ''}" data-action="setPomodoro" data-value="50">50 мин</button>
+                            <button class="btn secondary ${Number(this.settings.pomodoroLength) === 90 ? 'selected' : ''}" data-action="setPomodoro" data-value="90">90 мин</button>
                         </div>
                     </div>
 
@@ -982,6 +999,19 @@ class FocusHelperApp {
             };
         }
         
+        // Убеждаемся, что achievements всегда массив
+        if (!Array.isArray(this.stats.achievements)) {
+            this.stats.achievements = [];
+        }
+        
+        // Убеждаемся, что все числовые поля существуют
+        this.stats.totalSessions = this.stats.totalSessions || 0;
+        this.stats.totalFocusTime = this.stats.totalFocusTime || 0;
+        this.stats.currentStreak = this.stats.currentStreak || 0;
+        this.stats.longestStreak = this.stats.longestStreak || 0;
+        this.stats.level = this.stats.level || 1;
+        this.stats.xp = this.stats.xp || 0;
+        
         console.log('Using stats for render:', this.stats);
         
         const hours = Math.floor(this.stats.totalFocusTime / 60);
@@ -993,8 +1023,8 @@ class FocusHelperApp {
                 id: 'first_steps', 
                 title: 'Первые шаги', 
                 icon: '🎯', 
-                unlocked: (this.stats && this.stats.achievements && Array.isArray(this.stats.achievements)) ? 
-                    this.stats.achievements.some(a => a.id === 'first_steps') : false 
+                unlocked: Array.isArray(this.stats.achievements) && 
+                    this.stats.achievements.some(a => a && a.id === 'first_steps')
             }
         ].map(ach => `
             <div class="task-item">
