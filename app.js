@@ -1,26 +1,21 @@
 class FocusHelperApp {
     constructor() {
-        this.currentView = 'onboarding'; // Начать с онбординга
+        this.currentView = 'onboarding';
         this.userData = null;
         this.eventListenersAttached = false;
-        // URL для синхронизации с ботом
-        // Для локальной разработки: 'http://localhost:8000'
-        // Для продакшена: укажите URL вашего API сервера
-        this.apiBaseUrl = 'http://localhost:8000'; // TODO: Замените на URL вашего API сервера для синхронизации
-        
-        // Получаем данные пользователя из Max Web App SDK
+        this.apiBaseUrl = 'http://localhost:8000'; 
         this.initUserData(); 
         this.timerInterval = null;
-        this.timeLeft = 30; // 30 секунд для тестирования (обычно 25 * 60)
+        this.timeLeft = 30;
         this.isRunning = false;
         this.isPaused = false;
         this.activeTask = null;
-        this.selectedTaskId = null; // Для просмотра задачи
-        this.lastPomodoroFocus = null; // Последняя тема pomodoro
+        this.selectedTaskId = null;
+        this.lastPomodoroFocus = null;
         this.settings = {
             dailyHours: 4,
             productiveTime: 'morning',
-            pomodoroLength: 0.5, // 0.5 минуты (30 секунд) для тестирования (обычно 25)
+            pomodoroLength: 0.5,
             breakLength: 5,
             isOnboarded: false
         };
@@ -37,19 +32,15 @@ class FocusHelperApp {
         this.init();
     }
 
-    // Инициализация данных пользователя из Max Web App SDK
     initUserData() {
         try {
-            // Проверяем наличие Max Web App SDK
             if (typeof window !== 'undefined' && window.MaxWebApp) {
-                // Получаем данные пользователя из SDK
                 const maxWebApp = window.MaxWebApp;
                 if (maxWebApp.getUserData) {
                     this.userData = maxWebApp.getUserData();
                 } else if (maxWebApp.user) {
                     this.userData = { userId: maxWebApp.user.id || maxWebApp.user.user_id };
                 } else if (maxWebApp.initData) {
-                    // Пробуем получить из initData
                     const initData = maxWebApp.initData;
                     if (initData.user) {
                         this.userData = { userId: initData.user.id || initData.user.user_id };
@@ -64,22 +55,18 @@ class FocusHelperApp {
         }
     }
 
-    // Инициализация
     init() {
-        // Проверяем доступность localStorage
         if (!this.isLocalStorageAvailable()) {
             console.error('❌ localStorage недоступен! Данные не будут сохраняться.');
             alert('⚠️ Внимание: localStorage недоступен. Статистика не будет сохраняться после закрытия браузера.\n\nВозможные причины:\n- Режим инкогнито\n- Браузер заблокировал хранилище\n- Недостаточно места');
         }
         
         this.loadData();
-        // Загружаем последнюю тему pomodoro
         this.lastPomodoroFocus = localStorage.getItem('lastPomodoroFocus') || null;
         this.attachEventListeners();
         this.renderApp();
     }
 
-    // Проверка доступности localStorage
     isLocalStorageAvailable() {
         try {
             const test = '__localStorage_test__';
@@ -91,25 +78,21 @@ class FocusHelperApp {
         }
     }
 
-    // Методы работы с данными (локальное хранение + синхронизация)
     async loadData() {
         try {
-            // Локальное хранение
             const savedSettings = JSON.parse(localStorage.getItem('focus_settings') || '{}');
             this.settings = {
                 dailyHours: 4,
                 productiveTime: 'morning',
-                pomodoroLength: 0.5, // 0.5 минуты (30 секунд) для тестирования (обычно 25)
+                pomodoroLength: 0.5,
                 breakLength: 5,
                 isOnboarded: false,
                 ...savedSettings
             };
-            // Принудительно устанавливаем 0.5 для тестирования (перезаписываем сохраненное значение)
             this.settings.pomodoroLength = 0.5;
             this.tasks = JSON.parse(localStorage.getItem('focus_tasks') || '[]');
             this.stats = JSON.parse(localStorage.getItem('focus_stats') || '{}');
 
-            // Убеждаемся, что stats валидны
             if (!this.stats || typeof this.stats !== 'object') {
                 this.stats = {
                     totalSessions: 0,
@@ -122,17 +105,14 @@ class FocusHelperApp {
                 };
             }
             
-            // Убеждаемся, что achievements всегда массив
             if (!Array.isArray(this.stats.achievements)) {
                 this.stats.achievements = [];
             }
 
-            // Синхронизация с ботом
             if (this.userData?.userId) {
                 await this.syncWithBot();
             }
 
-            // Если не онбордирован, показать онбординг
             if (!this.settings.isOnboarded) {
                 this.currentView = 'onboarding';
             } else {
@@ -140,7 +120,6 @@ class FocusHelperApp {
             }
         } catch (error) {
             console.error('Ошибка загрузки данных:', error);
-            // Fallback для stats
             if (!this.stats || typeof this.stats !== 'object') {
                 this.stats = {
                     totalSessions: 0,
@@ -152,7 +131,6 @@ class FocusHelperApp {
                     achievements: []
                 };
             }
-            // Убеждаемся, что achievements всегда массив
             if (!Array.isArray(this.stats.achievements)) {
                 this.stats.achievements = [];
             }
@@ -173,18 +151,15 @@ class FocusHelperApp {
         this.stats = newStats;
         try {
             localStorage.setItem('focus_stats', JSON.stringify(newStats));
-            // Дополнительная проверка: читаем обратно, чтобы убедиться, что сохранилось
             const saved = localStorage.getItem('focus_stats');
             if (!saved) {
                 console.warn('⚠️ Не удалось сохранить статистику в localStorage');
             }
         } catch (error) {
             console.error('❌ Ошибка сохранения статистики:', error);
-            // Если localStorage переполнен, пытаемся очистить старые данные
             if (error.name === 'QuotaExceededError') {
                 console.warn('⚠️ localStorage переполнен, очищаем старые данные...');
                 try {
-                    // Оставляем только самое важное
                     localStorage.removeItem('focus_tasks');
                     localStorage.setItem('focus_stats', JSON.stringify(newStats));
                 } catch (e) {
@@ -195,10 +170,8 @@ class FocusHelperApp {
     }
 
     async syncWithBot() {
-        // Получаем userId из userData или из Max Web App SDK
         let userId = this.userData?.userId;
         
-        // Если userId нет, пытаемся получить из Max Web App SDK напрямую
         if (!userId && typeof window !== 'undefined' && window.MaxWebApp) {
             try {
                 const maxWebApp = window.MaxWebApp;
@@ -217,7 +190,6 @@ class FocusHelperApp {
         }
         
         if (!userId) {
-            // Если нет userId, данные хранятся только локально
             console.log('ℹ️ Данные хранятся только локально (localStorage). userId не найден.');
             return;
         }
@@ -245,27 +217,22 @@ class FocusHelperApp {
             }
         } catch (error) {
             console.warn('⚠️ Ошибка синхронизации, данные сохранены локально:', error.message);
-            // Данные все равно сохранены в localStorage, так что это не критично
         }
     }
 
-    // Навигация
     navigateTo(view) {
         console.log('navigateTo called with view:', view, 'current view:', this.currentView);
         this.currentView = view;
         this.renderApp();
     }
 
-    // Онбординг
     completeOnboarding(settings) {
         this.saveSettings({ ...this.settings, ...settings, isOnboarded: true });
         this.navigateTo('home');
         this.syncWithBot();
     }
 
-    // Создание задачи (заглушка без AI)
     async createTask(taskDescription, deadline = null) {
-        // Заглушка: hardcoded план на основе описания
         let subTasks = [];
         if (taskDescription.includes('экзамен') || taskDescription.includes('курсовая')) {
             subTasks = [
@@ -283,11 +250,9 @@ class FocusHelperApp {
             ];
         }
 
-        // Обрабатываем дедлайн: если это строка даты, конвертируем в ISO формат
         let deadlineDate = undefined;
         if (deadline) {
             if (typeof deadline === 'string' && deadline.trim()) {
-                // Если это дата в формате YYYY-MM-DD, конвертируем в ISO
                 const date = new Date(deadline);
                 if (!isNaN(date.getTime())) {
                     deadlineDate = date.toISOString();
@@ -312,18 +277,14 @@ class FocusHelperApp {
         this.tasks.push(task);
         this.saveTasks(this.tasks);
         await this.syncWithBot();
-        // Открываем созданную задачу
         this.selectedTaskId = task.id;
         this.navigateTo('taskDetails');
     }
 
-    // Pomodoro логика
-    // Проверка, завершена ли подзадача
     isSubTaskCompleted(subTask) {
         return subTask.completedPomodoros >= subTask.estimatedPomodoros;
     }
 
-    // Проверка, завершена ли задача (все подзадачи выполнены)
     isTaskCompleted(task) {
         if (!task || !task.subTasks || task.subTasks.length === 0) {
             return false;
@@ -331,14 +292,11 @@ class FocusHelperApp {
         return task.subTasks.every(st => this.isSubTaskCompleted(st));
     }
 
-    // Проверка, можно ли начать Pomodoro для подзадачи
-    // Можно начинать только первую незавершенную подзадачу
     canStartPomodoroForSubTask(task, subTaskId) {
         if (!task || !task.subTasks || task.subTasks.length === 0) {
             return false;
         }
         
-        // Находим индекс текущей подзадачи
         const currentIndex = task.subTasks.findIndex(st => Number(st.id) === Number(subTaskId));
         if (currentIndex === -1) {
             return false;
@@ -346,19 +304,17 @@ class FocusHelperApp {
         
         const currentSubTask = task.subTasks[currentIndex];
         
-        // Если текущая подзадача уже завершена, нельзя начинать
         if (this.isSubTaskCompleted(currentSubTask)) {
             return false;
         }
         
-        // Проверяем, все ли предыдущие подзадачи завершены
         for (let i = 0; i < currentIndex; i++) {
             if (!this.isSubTaskCompleted(task.subTasks[i])) {
-                return false; // Предыдущая подзадача не завершена
+                return false;
             }
         }
         
-        return true; // Все предыдущие завершены, текущая не завершена
+        return true;
     }
 
     startPomodoro(taskId, subTaskId, focusText = null) {
@@ -379,22 +335,17 @@ class FocusHelperApp {
             return;
         }
         
-        // Проверяем, не завершена ли вся задача
         if (this.isTaskCompleted(task)) {
             alert('Эта задача уже завершена! Все подзадачи выполнены.');
             return;
         }
         
-        // Проверяем, не завершена ли подзадача
         if (this.isSubTaskCompleted(subTask)) {
             alert('Эта подзадача уже завершена! Все сессии Pomodoro выполнены.');
             return;
         }
         
-        // Проверяем, можно ли начинать Pomodoro для этой подзадачи
-        // Можно начинать только первую незавершенную подзадачу
         if (!this.canStartPomodoroForSubTask(task, subTaskId)) {
-            // Находим первую незавершенную подзадачу
             const firstIncomplete = task.subTasks.find(st => !this.isSubTaskCompleted(st));
             if (firstIncomplete) {
                 alert(`Сначала завершите предыдущие подзадачи! Начните с подзадачи "${firstIncomplete.title}"`);
@@ -405,14 +356,12 @@ class FocusHelperApp {
         }
         
         this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId), focusText: focusText || '' };
-        this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60); // 30 секунд для тестирования
-        this.isRunning = false; // Не запускаем сразу
+        this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
+        this.isRunning = false;
         this.isPaused = false;
         this.navigateTo('pomodoro');
-        // Таймер не запускается автоматически - пользователь должен нажать "Начать"
     }
 
-    // Запуск таймера (после того как пользователь нажал "Начать")
     startTimer() {
         if (this.timerInterval) {
             clearInterval(this.timerInterval);
@@ -421,8 +370,6 @@ class FocusHelperApp {
         this.isPaused = false;
         console.log('Таймер запущен, timeLeft:', this.timeLeft);
         
-        // Обновляем время каждую секунду
-        // Для плавной анимации обновляем только текст таймера, не весь DOM
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
@@ -432,10 +379,9 @@ class FocusHelperApp {
                     clearInterval(this.timerInterval);
                     this.timerInterval = null;
                     this.completePomodoro();
-                    return; // Прерываем выполнение, чтобы не вызывать renderApp после завершения
+                    return;
                 }
             }
-            // Обновляем только текст таймера и прогресс-бар, не весь DOM
             this.updateTimerDisplay();
         }, 1000);
         this.renderApp();
@@ -445,7 +391,6 @@ class FocusHelperApp {
         this.isPaused = !this.isPaused;
     }
 
-    // Обновление только текста таймера и прогресса без пересоздания DOM
     updateTimerDisplay() {
         if (this.currentView !== 'pomodoro' || !this.activeTask) {
             return;
@@ -455,7 +400,6 @@ class FocusHelperApp {
         const seconds = this.timeLeft % 60;
         const timeText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         
-        // Обновляем текст таймера
         const timerTextElements = document.querySelectorAll('.timer-text');
         timerTextElements.forEach(el => {
             if (el.textContent !== timeText) {
@@ -463,7 +407,6 @@ class FocusHelperApp {
             }
         });
         
-        // Обновляем прогресс-бар
         const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
         const progress = totalTime > 0 ? Math.min(Math.max(((totalTime - this.timeLeft) / totalTime) * 100, 0), 100) : 0;
         const progressFillElements = document.querySelectorAll('.progress-fill');
@@ -475,7 +418,6 @@ class FocusHelperApp {
     }
 
     cancelPomodoro() {
-        // Сохраняем последнюю тему pomodoro перед выходом
         if (this.activeTask?.focusText) {
             this.lastPomodoroFocus = this.activeTask.focusText;
             localStorage.setItem('lastPomodoroFocus', this.lastPomodoroFocus);
@@ -489,7 +431,6 @@ class FocusHelperApp {
         this.navigateTo('home');
     }
 
-    // Проверка и открытие достижений
     checkAndUnlockAchievements() {
         if (!Array.isArray(this.stats.achievements)) {
             this.stats.achievements = [];
@@ -499,7 +440,6 @@ class FocusHelperApp {
             return this.stats.achievements.some(a => a && a.id === id);
         };
 
-        // Достижения по уровням
         const levelAchievements = {
             1: { id: 'first_steps', title: 'Первые шаги', icon: '🎯' },
             2: { id: 'level_2', title: 'Новичок', icon: '⭐' },
@@ -508,12 +448,10 @@ class FocusHelperApp {
             10: { id: 'level_10', title: 'Мастер', icon: '👑' }
         };
 
-        // Проверяем достижения по уровням
         if (levelAchievements[this.stats.level] && !hasAchievement(levelAchievements[this.stats.level].id)) {
             this.stats.achievements.push(levelAchievements[this.stats.level]);
         }
 
-        // Проверяем достижения по условиям
         const conditionAchievements = [
             {
                 id: 'first_steps',
@@ -565,9 +503,8 @@ class FocusHelperApp {
         clearInterval(this.timerInterval);
         this.timerInterval = null;
         this.isRunning = false;
-        this.timeLeft = 0; // Убеждаемся, что время = 0
+        this.timeLeft = 0;
 
-        // Убеждаемся, что stats инициализированы
         if (!this.stats) {
             this.stats = {
                 totalSessions: 0,
@@ -580,20 +517,15 @@ class FocusHelperApp {
             };
         }
 
-        // Обновление статистики (упрощенная геймификация)
         const xpGained = 10;
         this.stats.totalSessions = (this.stats.totalSessions || 0) + 1;
-        // Используем реальное значение pomodoroLength для статистики
         this.stats.totalFocusTime = (this.stats.totalFocusTime || 0) + (this.settings.pomodoroLength || 0.5);
         const oldLevel = this.stats.level || 1;
         this.stats.xp = (this.stats.xp || 0) + xpGained;
         this.stats.level = Math.floor(this.stats.xp / 100) + 1;
         const levelUp = this.stats.level > oldLevel;
 
-        // Обновление серии дней (streak)
         this.updateStreak();
-
-        // Проверка и открытие достижений
         this.checkAndUnlockAchievements();
 
         console.log('Статистика после завершения сессии:', {
@@ -607,9 +539,6 @@ class FocusHelperApp {
 
         this.saveStats(this.stats);
 
-        // Обновление задачи - ТОЛЬКО если Pomodoro был запущен из задачи с подзадачей
-        // Если activeTask содержит taskId и subTaskId - это Pomodoro из задачи
-        // Если activeTask содержит только focusText - это быстрый Pomodoro, не обновляем задачи
         if (this.activeTask?.taskId && this.activeTask?.subTaskId) {
             const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
             if (task) {
@@ -624,26 +553,19 @@ class FocusHelperApp {
                 }
             }
         }
-        // Если это быстрый Pomodoro (без taskId/subTaskId), обновляем только статистику (уже сделано выше)
 
         this.activeTask = null;
-        
-        // Обновляем интерфейс перед показом модального окна
         this.renderApp();
-        
-        // Показываем модальное окно с поздравлением
         console.log('Показываем модальное окно завершения, xpGained:', xpGained, 'levelUp:', levelUp);
         this.showPomodoroCompleteModal(xpGained, levelUp);
         
         this.syncWithBot();
     }
 
-    // Обновление серии дней (streak)
     updateStreak() {
-        const today = new Date().toDateString(); // Получаем дату в формате "Mon Jan 01 2024"
+        const today = new Date().toDateString();
         const lastSessionDate = localStorage.getItem('lastPomodoroDate');
         
-        // Инициализируем streak, если его нет
         if (this.stats.currentStreak === undefined || this.stats.currentStreak === null) {
             this.stats.currentStreak = 0;
         }
@@ -652,31 +574,24 @@ class FocusHelperApp {
         }
         
         if (!lastSessionDate) {
-            // Первая сессия - начинаем серию
             this.stats.currentStreak = 1;
             localStorage.setItem('lastPomodoroDate', today);
         } else if (lastSessionDate === today) {
-            // Сессия уже была сегодня - не увеличиваем streak, но обновляем дату
-            // Это нормально - streak увеличивается только при переходе на новый день
             localStorage.setItem('lastPomodoroDate', today);
         } else {
-            // Проверяем, была ли сессия вчера
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
             const yesterdayString = yesterday.toDateString();
             
             if (lastSessionDate === yesterdayString) {
-                // Сессия была вчера - продолжаем серию
                 this.stats.currentStreak = (this.stats.currentStreak || 0) + 1;
                 localStorage.setItem('lastPomodoroDate', today);
             } else {
-                // Прошло больше дня - сбрасываем серию
                 this.stats.currentStreak = 1;
                 localStorage.setItem('lastPomodoroDate', today);
             }
         }
         
-        // Обновляем рекорд серии, если текущая серия больше
         if (this.stats.currentStreak > this.stats.longestStreak) {
             this.stats.longestStreak = this.stats.currentStreak;
         }
@@ -689,7 +604,6 @@ class FocusHelperApp {
         });
     }
 
-    // Получить случайную физ разминку
     getRandomExercise() {
         const exercises = [
             "💪 10 отжиманий",
@@ -708,12 +622,10 @@ class FocusHelperApp {
         return exercises[Math.floor(Math.random() * exercises.length)];
     }
 
-    // Показать модальное окно завершения Pomodoro
     showPomodoroCompleteModal(xpGained, levelUp) {
         console.log('showPomodoroCompleteModal вызван');
         const exercise = this.getRandomExercise();
         
-        // Удаляем предыдущее модальное окно, если оно есть
         const existingModal = document.querySelector('.pomodoro-complete-modal');
         if (existingModal) {
             existingModal.remove();
@@ -793,11 +705,9 @@ class FocusHelperApp {
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
-            // Переходим на главный экран после закрытия модального окна
             this.navigateTo('home');
         };
 
-        // Ждем, пока DOM обновится, прежде чем добавлять обработчики
         setTimeout(() => {
             const closeBtn = document.getElementById('closePomodoroModal');
             if (closeBtn) {
@@ -811,30 +721,24 @@ class FocusHelperApp {
         console.log('Модальное окно добавлено в DOM');
     }
 
-    // Быстрый старт Pomodoro (из навигации) - БЕЗ привязки к задаче
     startQuickPomodoro() {
         console.log('startQuickPomodoro called, activeTask exists:', !!this.activeTask);
         if (this.activeTask) {
-            // Если таймер активен (пауза или готов к старту), просто переходим к экрану без модалки
             this.navigateTo('pomodoro');
         } else {
-            // Иначе показываем модалку для новой темы (БЕЗ создания задачи)
             this.showQuickPomodoroModal();
         }
     }
 
-    // Удаление задачи
     deleteTask(taskId) {
         if (!taskId) {
             console.error('deleteTask: taskId is missing');
             return;
         }
-        // Приводим к строке для сравнения
         const idStr = String(taskId);
         const beforeCount = this.tasks.length;
         console.log('deleteTask before filter:', { taskId: idStr, tasks: this.tasks.map(t => ({ id: String(t.id), title: t.title })) });
         
-        // Фильтруем задачи
         const originalTasks = [...this.tasks];
         this.tasks = this.tasks.filter(t => {
             const taskIdStr = String(t.id);
@@ -865,7 +769,6 @@ class FocusHelperApp {
         
         this.saveTasks(this.tasks);
         this.syncWithBot();
-        // Если удалили текущую задачу, возвращаемся на главную
         if (this.selectedTaskId === idStr) {
             this.selectedTaskId = null;
             this.navigateTo('home');
@@ -874,7 +777,6 @@ class FocusHelperApp {
         }
     }
 
-    // Показать модальное окно подтверждения удаления задачи
     showDeleteTaskConfirm(taskId) {
         const modal = document.createElement('div');
         modal.className = 'confirm-modal';
@@ -934,7 +836,6 @@ class FocusHelperApp {
         });
     }
 
-    // Показать модальное окно подтверждения удаления подзадачи
     showDeleteSubTaskConfirm(taskId, subTaskId) {
         const modal = document.createElement('div');
         modal.className = 'confirm-modal';
@@ -993,7 +894,6 @@ class FocusHelperApp {
         });
     }
 
-    // Удаление подзадачи
     deleteSubTask(taskId, subTaskId) {
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) return;
@@ -1001,12 +901,10 @@ class FocusHelperApp {
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) return;
 
-        // Удаляем подзадачу
         const oldPomodoros = subTask.estimatedPomodoros;
         const oldCompleted = subTask.completedPomodoros;
         task.subTasks = task.subTasks.filter(st => Number(st.id) !== Number(subTaskId));
         
-        // Пересчитываем общее количество pomodoros
         task.totalPomodoros = task.totalPomodoros - oldPomodoros;
         task.completedPomodoros = Math.max(0, task.completedPomodoros - oldCompleted);
         
@@ -1015,7 +913,6 @@ class FocusHelperApp {
         this.renderApp();
     }
 
-    // Показать модальное окно для быстрого Pomodoro (БЕЗ привязки к задаче)
     showQuickPomodoroModal() {
         const modal = document.createElement('div');
         modal.className = 'focus-input-modal';
@@ -1055,11 +952,9 @@ class FocusHelperApp {
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
         
-        // Фокус на поле ввода для показа клавиатуры
         const focusInput = document.getElementById('focusInput');
         setTimeout(() => focusInput.focus(), 100);
         
-        // Обработчики
         const startBtn = document.getElementById('startQuickFocusPomodoro');
         const cancelBtn = document.getElementById('cancelQuickFocusInput');
         
@@ -1076,12 +971,8 @@ class FocusHelperApp {
                 return;
             }
             
-            // Сохраняем последнюю тему
             this.lastPomodoroFocus = focusText;
             localStorage.setItem('lastPomodoroFocus', focusText);
-            
-            // Создаем быстрый Pomodoro БЕЗ привязки к задаче
-            // activeTask будет содержать только focusText, без taskId и subTaskId
             this.activeTask = { focusText: focusText };
             this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
             this.isRunning = false;
@@ -1098,7 +989,6 @@ class FocusHelperApp {
         });
     }
 
-    // Показать модальное окно для ввода фокуса перед pomodoro (для задач)
     showFocusInputModal() {
         const modal = document.createElement('div');
         modal.className = 'focus-input-modal';
@@ -1138,11 +1028,9 @@ class FocusHelperApp {
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
         
-        // Фокус на поле ввода для показа клавиатуры
         const focusInput = document.getElementById('focusInput');
         setTimeout(() => focusInput.focus(), 100);
         
-        // Обработчики
         const startBtn = document.getElementById('startFocusPomodoro');
         const cancelBtn = document.getElementById('cancelFocusInput');
         
@@ -1159,18 +1047,15 @@ class FocusHelperApp {
                 return;
             }
             
-            // Сохраняем последнюю тему
             this.lastPomodoroFocus = focusText;
             localStorage.setItem('lastPomodoroFocus', focusText);
             
-            // Создаем временную задачу или используем существующую
             if (this.tasks.length > 0) {
                 const lastTask = this.tasks[this.tasks.length - 1];
                 if (lastTask && lastTask.subTasks.length > 0) {
                     const activeSubTask = lastTask.subTasks.find(st => !st.completed) || lastTask.subTasks[0];
                     this.startPomodoro(lastTask.id, activeSubTask.id, focusText);
                 } else {
-                    // Создаем быструю задачу
                     this.createTask(focusText).then(() => {
                         const newTask = this.tasks[this.tasks.length - 1];
                         if (newTask && newTask.subTasks.length > 0) {
@@ -1179,7 +1064,6 @@ class FocusHelperApp {
                     });
                 }
             } else {
-                // Нет задач, создаем новую
                 this.createTask(focusText).then(() => {
                     const newTask = this.tasks[this.tasks.length - 1];
                     if (newTask && newTask.subTasks.length > 0) {
@@ -1196,7 +1080,6 @@ class FocusHelperApp {
             if (e.target === modal) closeModal();
         });
         
-        // Сохранение по Enter
         focusInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1205,7 +1088,6 @@ class FocusHelperApp {
         });
     }
 
-    // Редактирование подзадачи
     editSubTask(taskId, subTaskId) {
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) return;
@@ -1213,7 +1095,6 @@ class FocusHelperApp {
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) return;
 
-        // Создаем модальное окно для редактирования
         const modal = document.createElement('div');
         modal.className = 'edit-modal';
         modal.style.cssText = `
@@ -1254,11 +1135,9 @@ class FocusHelperApp {
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
         
-        // Фокус на первое поле для показа клавиатуры
         const titleInput = document.getElementById('editSubTaskTitle');
         setTimeout(() => titleInput.focus(), 100);
         
-        // Обработчики
         const saveBtn = document.getElementById('saveEditSubTask');
         const cancelBtn = document.getElementById('cancelEditSubTask');
         
@@ -1277,7 +1156,6 @@ class FocusHelperApp {
             if (!isNaN(newPomodoros) && newPomodoros > 0) {
                 const oldPomodoros = subTask.estimatedPomodoros;
                 subTask.estimatedPomodoros = newPomodoros;
-                // Пересчитываем общее количество pomodoros для задачи
                 task.totalPomodoros = task.totalPomodoros - oldPomodoros + newPomodoros;
             }
             
@@ -1293,7 +1171,6 @@ class FocusHelperApp {
             if (e.target === modal) closeModal();
         });
         
-        // Сохранение по Enter
         titleInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1309,7 +1186,6 @@ class FocusHelperApp {
         });
     }
 
-    // Рендер экранов
     renderOnboarding() {
         return `
             <div class="app-container">
@@ -1397,7 +1273,6 @@ class FocusHelperApp {
     }
 
     renderCreateTask() {
-        // Получаем сегодняшнюю дату в формате YYYY-MM-DD для минимального значения
         const today = new Date();
         const minDate = today.toISOString().split('T')[0];
         
@@ -1514,15 +1389,12 @@ class FocusHelperApp {
     renderPomodoro() {
         if (!this.activeTask) return this.renderHome();
 
-        // Определяем, это Pomodoro из задачи или быстрый Pomodoro
         const isQuickPomodoro = !this.activeTask.taskId || !this.activeTask.subTaskId;
         
         let focusText = 'Фокус';
         if (isQuickPomodoro) {
-            // Быстрый Pomodoro - используем только focusText
             focusText = this.activeTask.focusText || 'Фокус';
         } else {
-            // Pomodoro из задачи - получаем информацию о задаче и подзадаче
             const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
             const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
             focusText = this.activeTask.focusText || (subTask ? subTask.title : 'Фокус');
@@ -1539,12 +1411,9 @@ class FocusHelperApp {
 
         const minutes = Math.floor(this.timeLeft / 60);
         const seconds = this.timeLeft % 60;
-        // Для расчета прогресса используем текущее значение pomodoroLength
         const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
-        // Расчет прогресса для плавной анимации
         const progress = totalTime > 0 ? Math.min(Math.max(((totalTime - this.timeLeft) / totalTime) * 100, 0), 100) : 0;
 
-        // Если таймер еще не запущен, показываем кнопку "Начать"
         if (!this.isRunning && !this.isPaused) {
             return `
                 <div class="app-container">
@@ -1648,7 +1517,6 @@ class FocusHelperApp {
     renderStatistics() {
         console.log('renderStatistics called, current stats:', this.stats);
         
-        // Загружаем статистику из localStorage если нужно
         const savedStats = localStorage.getItem('focus_stats');
         if (savedStats) {
             try {
@@ -1660,7 +1528,6 @@ class FocusHelperApp {
             }
         }
         
-        // Убеждаемся, что статистика загружена (fallback)
         if (!this.stats) {
             this.stats = {
                 totalSessions: 0,
@@ -1673,12 +1540,10 @@ class FocusHelperApp {
             };
         }
         
-        // Убеждаемся, что achievements всегда массив
         if (!Array.isArray(this.stats.achievements)) {
             this.stats.achievements = [];
         }
         
-        // Убеждаемся, что все числовые поля существуют
         this.stats.totalSessions = this.stats.totalSessions || 0;
         this.stats.totalFocusTime = this.stats.totalFocusTime || 0;
         this.stats.currentStreak = this.stats.currentStreak || 0;
@@ -1686,7 +1551,6 @@ class FocusHelperApp {
         this.stats.level = this.stats.level || 1;
         this.stats.xp = this.stats.xp || 0;
         
-        // Проверяем и открываем достижения при просмотре статистики
         this.checkAndUnlockAchievements();
         
         console.log('Using stats for render:', this.stats);
@@ -1695,13 +1559,11 @@ class FocusHelperApp {
         const minutes = this.stats.totalFocusTime % 60;
         const levelProgress = this.stats.xp % 100;
 
-        // Определяем, какие достижения разблокированы
         const hasAchievement = (id) => {
             return Array.isArray(this.stats.achievements) && 
                 this.stats.achievements.some(a => a && a.id === id);
         };
 
-        // Все возможные достижения с условиями открытия
         const allAchievements = [
             { 
                 id: 'first_steps', 
@@ -1780,15 +1642,12 @@ class FocusHelperApp {
             }
         ];
 
-        // Фильтруем достижения: показываем только те, которые доступны для текущего уровня
         const availableAchievements = allAchievements.filter(ach => 
             this.stats.level >= ach.unlockLevel
         );
 
-        // Проверяем, какие достижения разблокированы
-        // Достижение считается разблокированным только если оно есть в stats.achievements
         const achievements = availableAchievements
-            .filter(ach => hasAchievement(ach.id)) // Показываем только те, что уже разблокированы
+            .filter(ach => hasAchievement(ach.id))
             .map(ach => `
             <div class="task-item">
                 <div class="flex center">
@@ -1802,11 +1661,8 @@ class FocusHelperApp {
             </div>
         `).join('');
 
-        // Показываем закрытые достижения:
-        // 1. Те, что доступны по уровню, но еще не разблокированы
-        // 2. Те, что еще не доступны по уровню
         const availableButLocked = availableAchievements
-            .filter(ach => !hasAchievement(ach.id)) // Доступны по уровню, но еще не разблокированы
+            .filter(ach => !hasAchievement(ach.id))
             .map(ach => `
             <div class="task-item achievement-locked">
                 <div class="flex center">
@@ -1822,7 +1678,7 @@ class FocusHelperApp {
         
         const levelLockedAchievements = allAchievements
             .filter(ach => this.stats.level < ach.unlockLevel)
-            .slice(0, 3) // Показываем только 3 следующих
+            .slice(0, 3)
             .map(ach => `
             <div class="task-item achievement-locked">
                 <div class="flex center">
@@ -1904,7 +1760,7 @@ class FocusHelperApp {
                 content = this.renderCreateTask();
                 break;
             case 'taskDetails':
-                const taskId = this.selectedTaskId || ''; // Для деталей
+                const taskId = this.selectedTaskId || ''; 
                 content = this.renderTaskDetails(taskId);
                 break;
             case 'pomodoro':
@@ -1919,12 +1775,9 @@ class FocusHelperApp {
         }
 
         appDiv.innerHTML = content;
-
-        // Прикрепить слушатели после рендера
         this.attachDynamicEventListeners();
     }
 
-    // Навигация
     renderNavigation() {
         return `
             <nav class="navigation">
@@ -1952,37 +1805,28 @@ class FocusHelperApp {
         `;
     }
 
-    // Слушатели событий
     attachEventListeners() {
-        // Удаляем старый обработчик, если он был
         if (this.clickHandler) {
             document.removeEventListener('click', this.clickHandler);
         }
         
-        // Создаем новый обработчик
         this.clickHandler = (e) => {
-            // Игнорируем клики на input элементы (включая календарь)
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
                 return;
             }
             
-            // Игнорируем клики внутри модальных окон
             if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal') || e.target.closest('.confirm-modal')) {
                 return;
             }
             
-            // Находим элемент с data-action, начиная с целевого элемента и поднимаясь вверх
             let actionElement = null;
             let current = e.target;
             
-            // Поднимаемся по DOM дереву, ища элемент с data-action
             while (current && current !== document.body) {
-                // Проверяем, есть ли data-action атрибут
                 if (current.hasAttribute && current.hasAttribute('data-action')) {
                     actionElement = current;
                     break;
                 }
-                // Также проверяем через dataset
                 if (current.dataset && current.dataset.action) {
                     actionElement = current;
                     break;
@@ -1994,24 +1838,19 @@ class FocusHelperApp {
                 return;
             }
             
-            // Получаем action из атрибута или dataset
             const action = actionElement.getAttribute('data-action') || actionElement.dataset.action;
             if (!action) {
                 return;
             }
 
-            // Отладка
             console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target, 'has data-view:', actionElement.hasAttribute('data-view'), 'dataset.view:', actionElement.dataset.view);
 
-            // Останавливаем bubbling сразу после нахождения action (чтобы избежать повторных обработок)
             e.stopPropagation();
 
-            // Предотвращаем стандартное поведение только для кнопок
             if (actionElement.tagName === 'BUTTON' || actionElement.closest('button')) {
                 e.preventDefault();
             }
 
-            // Обработка действий
             if (action === 'navigate') {
                 const view = actionElement.getAttribute('data-view') || actionElement.dataset.view;
                 console.log('navigate clicked:', view, 'element:', actionElement);
@@ -2027,21 +1866,20 @@ class FocusHelperApp {
             } else if (action === 'setDailyHours') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.dailyHours = parseInt(value);
-                this.saveSettings(this.settings); // Сохраняем сразу для надёжности
-                this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
+                this.saveSettings(this.settings);
+                this.renderApp();
             } else if (action === 'setProductiveTime') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.productiveTime = value;
-                this.saveSettings(this.settings); // Сохраняем сразу
-                this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
+                this.saveSettings(this.settings);
+                this.renderApp();
             } else if (action === 'setPomodoro') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.pomodoroLength = parseInt(value);
                 this.settings.breakLength = parseInt(value) / 5;
-                this.saveSettings(this.settings); // Сохраняем сразу
-                this.renderApp(); // Обновляем интерфейс, чтобы показать выбранную опцию
+                this.saveSettings(this.settings);
+                this.renderApp();
             } else if (action === 'saveSettings') {
-                // Сохраняем настройки из формы
                 const pomodoroLength = parseInt(document.getElementById('pomodoroLength')?.value) || this.settings.pomodoroLength;
                 const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
                 const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
@@ -2051,11 +1889,7 @@ class FocusHelperApp {
                 this.settings.breakLength = breakLength;
                 
                 this.saveSettings(this.settings);
-                
-                // Показываем уведомление об успешном сохранении
                 alert('✅ Настройки сохранены!');
-                
-                // Возвращаемся на главный экран
                 this.navigateTo('home');
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
@@ -2066,11 +1900,10 @@ class FocusHelperApp {
                 const deadlineInput = document.getElementById('deadline');
                 const dl = deadlineInput?.value || null;
                 if (desc) {
-                    this.createTask(desc, dl); // Заглушка создаст план
+                    this.createTask(desc, dl);
                     alert('AI-анализ (заглушка): План создан с базовыми шагами!');
                 }
             } else if (action === 'saveTask') {
-                // Уже сохранено в createTask
                 this.navigateTo('home');
             } else if (action === 'viewTask') {
                 const taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
@@ -2079,10 +1912,8 @@ class FocusHelperApp {
                     this.navigateTo('taskDetails');
                 }
             } else if (action === 'deleteTask') {
-                // Получаем ID из атрибута или dataset
                 let taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
                 
-                // Если не нашли, ищем в родительских элементах
                 if (!taskId) {
                     let current = actionElement;
                     for (let i = 0; i < 5 && current; i++) {
@@ -2124,7 +1955,6 @@ class FocusHelperApp {
                 this.renderApp();
             } else if (action === 'cancelPomodoro') {
                 this.cancelPomodoro();
-                // cancelPomodoro уже вызывает navigateTo, который вызывает renderApp
             } else if (action === 'startQuickPomodoro') {
                 this.startQuickPomodoro();
             } else if (action === 'startTimer') {
@@ -2143,7 +1973,6 @@ class FocusHelperApp {
                 }
             }
             
-            // Обработка клика на редактируемое название подзадачи
             if (e.target.classList.contains('editable-title') && e.target.dataset.subtaskId) {
                 const taskItem = e.target.closest('.task-item');
                 if (taskItem) {
@@ -2156,15 +1985,12 @@ class FocusHelperApp {
             }
         };
         
-        // Привязываем обработчик
         document.addEventListener('click', this.clickHandler);
     }
 
     attachDynamicEventListeners() {
-        // Для динамических элементов, если нужно
     }
 }
 
-// Инициализация
 const app = new FocusHelperApp();
 window.app = app;
