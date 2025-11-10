@@ -331,6 +331,36 @@ class FocusHelperApp {
         return task.subTasks.every(st => this.isSubTaskCompleted(st));
     }
 
+    // Проверка, можно ли начать Pomodoro для подзадачи
+    // Можно начинать только первую незавершенную подзадачу
+    canStartPomodoroForSubTask(task, subTaskId) {
+        if (!task || !task.subTasks || task.subTasks.length === 0) {
+            return false;
+        }
+        
+        // Находим индекс текущей подзадачи
+        const currentIndex = task.subTasks.findIndex(st => Number(st.id) === Number(subTaskId));
+        if (currentIndex === -1) {
+            return false;
+        }
+        
+        const currentSubTask = task.subTasks[currentIndex];
+        
+        // Если текущая подзадача уже завершена, нельзя начинать
+        if (this.isSubTaskCompleted(currentSubTask)) {
+            return false;
+        }
+        
+        // Проверяем, все ли предыдущие подзадачи завершены
+        for (let i = 0; i < currentIndex; i++) {
+            if (!this.isSubTaskCompleted(task.subTasks[i])) {
+                return false; // Предыдущая подзадача не завершена
+            }
+        }
+        
+        return true; // Все предыдущие завершены, текущая не завершена
+    }
+
     startPomodoro(taskId, subTaskId, focusText = null) {
         if (!taskId || !subTaskId) {
             console.error('startPomodoro: missing taskId or subTaskId', { taskId, subTaskId });
@@ -349,15 +379,28 @@ class FocusHelperApp {
             return;
         }
         
+        // Проверяем, не завершена ли вся задача
+        if (this.isTaskCompleted(task)) {
+            alert('Эта задача уже завершена! Все подзадачи выполнены.');
+            return;
+        }
+        
         // Проверяем, не завершена ли подзадача
         if (this.isSubTaskCompleted(subTask)) {
             alert('Эта подзадача уже завершена! Все сессии Pomodoro выполнены.');
             return;
         }
         
-        // Проверяем, не завершена ли вся задача
-        if (this.isTaskCompleted(task)) {
-            alert('Эта задача уже завершена! Все подзадачи выполнены.');
+        // Проверяем, можно ли начинать Pomodoro для этой подзадачи
+        // Можно начинать только первую незавершенную подзадачу
+        if (!this.canStartPomodoroForSubTask(task, subTaskId)) {
+            // Находим первую незавершенную подзадачу
+            const firstIncomplete = task.subTasks.find(st => !this.isSubTaskCompleted(st));
+            if (firstIncomplete) {
+                alert(`Сначала завершите предыдущие подзадачи! Начните с подзадачи "${firstIncomplete.title}"`);
+            } else {
+                alert('Все подзадачи уже завершены!');
+            }
             return;
         }
         
@@ -1351,6 +1394,7 @@ class FocusHelperApp {
         const isTaskDone = this.isTaskCompleted(task);
         const subTasksList = task.subTasks.map((st, index) => {
             const isSubTaskDone = this.isSubTaskCompleted(st);
+            const canStart = this.canStartPomodoroForSubTask(task, st.id);
             return `
             <div class="task-item" data-subtask-id="${st.id}" ${isSubTaskDone ? 'style="opacity: 0.7;"' : ''}>
                 <div class="task-item-header">
@@ -1360,14 +1404,18 @@ class FocusHelperApp {
                             <div class="task-item-title editable-title" data-editable="true" data-subtask-id="${st.id}">
                                 ${st.title} ${isSubTaskDone ? '✅' : ''}
                             </div>
-                            <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий ${isSubTaskDone ? '(Завершено)' : ''}</div>
+                            <div class="task-item-meta">🍅 ${st.completedPomodoros}/${st.estimatedPomodoros} сессий ${isSubTaskDone ? '(Завершено)' : !canStart ? '(Сначала завершите предыдущие)' : ''}</div>
                         </div>
                     </div>
                     ${!isSubTaskDone && !isTaskDone ? `
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="editSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Редактировать">✏️</button>
                         <button class="icon-btn" data-action="deleteSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Удалить">🗑️</button>
+                        ${canStart ? `
                         <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
+                        ` : `
+                        <button class="btn secondary" style="padding: 8px 12px; font-size: 14px; opacity: 0.5; cursor: not-allowed;" disabled title="Сначала завершите предыдущие подзадачи">⏸️ Заблокировано</button>
+                        `}
                     </div>
                     ` : ''}
                 </div>
