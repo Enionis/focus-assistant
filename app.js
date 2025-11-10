@@ -3,7 +3,7 @@ class FocusHelperApp {
         this.currentView = 'onboarding'; // Начать с онбординга
         this.userData = null;
         this.eventListenersAttached = false;
-        this.apiBaseUrl = 'https://max.ru/t122_hakaton_bot'; 
+        this.apiBaseUrl = 'http://localhost:8000'; 
         this.timerInterval = null;
         this.timeLeft = 25 * 60;
         this.isRunning = false;
