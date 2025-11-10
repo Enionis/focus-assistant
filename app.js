@@ -445,16 +445,41 @@ class FocusHelperApp {
         this.timerInterval = null;
         this.isRunning = false;
 
+        // Убеждаемся, что stats инициализированы
+        if (!this.stats) {
+            this.stats = {
+                totalSessions: 0,
+                totalFocusTime: 0,
+                currentStreak: 0,
+                longestStreak: 0,
+                level: 1,
+                xp: 0,
+                achievements: []
+            };
+        }
+
         // Обновление статистики (упрощенная геймификация)
-        this.stats.totalSessions++;
+        this.stats.totalSessions = (this.stats.totalSessions || 0) + 1;
         // Для тестирования считаем как 25 минут, чтобы статистика была корректной
-        this.stats.totalFocusTime += 25; // В реальности: this.settings.pomodoroLength
-        this.stats.xp += 10;
-        const oldLevel = this.stats.level;
+        this.stats.totalFocusTime = (this.stats.totalFocusTime || 0) + 25; // В реальности: this.settings.pomodoroLength
+        this.stats.xp = (this.stats.xp || 0) + 10;
+        const oldLevel = this.stats.level || 1;
         this.stats.level = Math.floor(this.stats.xp / 100) + 1;
+
+        // Обновление серии дней (streak)
+        this.updateStreak();
 
         // Проверка и открытие достижений
         this.checkAndUnlockAchievements();
+
+        console.log('Статистика после завершения сессии:', {
+            totalSessions: this.stats.totalSessions,
+            totalFocusTime: this.stats.totalFocusTime,
+            xp: this.stats.xp,
+            level: this.stats.level,
+            currentStreak: this.stats.currentStreak,
+            longestStreak: this.stats.longestStreak
+        });
 
         this.saveStats(this.stats);
 
@@ -476,6 +501,47 @@ class FocusHelperApp {
         alert('Сессия завершена! Отдохни 5 минут.');
         this.syncWithBot();
         this.navigateTo('home');
+    }
+
+    // Обновление серии дней (streak)
+    updateStreak() {
+        const today = new Date().toDateString(); // Получаем дату в формате "Mon Jan 01 2024"
+        const lastSessionDate = localStorage.getItem('lastPomodoroDate');
+        
+        if (!lastSessionDate) {
+            // Первая сессия - начинаем серию
+            this.stats.currentStreak = 1;
+            localStorage.setItem('lastPomodoroDate', today);
+        } else if (lastSessionDate === today) {
+            // Сессия уже была сегодня - не увеличиваем streak, но обновляем дату
+            localStorage.setItem('lastPomodoroDate', today);
+        } else {
+            // Проверяем, была ли сессия вчера
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayString = yesterday.toDateString();
+            
+            if (lastSessionDate === yesterdayString) {
+                // Сессия была вчера - продолжаем серию
+                this.stats.currentStreak++;
+                localStorage.setItem('lastPomodoroDate', today);
+            } else {
+                // Прошло больше дня - сбрасываем серию
+                this.stats.currentStreak = 1;
+                localStorage.setItem('lastPomodoroDate', today);
+            }
+        }
+        
+        // Обновляем рекорд серии, если текущая серия больше
+        if (this.stats.currentStreak > this.stats.longestStreak) {
+            this.stats.longestStreak = this.stats.currentStreak;
+        }
+        
+        console.log('Streak updated:', {
+            currentStreak: this.stats.currentStreak,
+            longestStreak: this.stats.longestStreak,
+            lastSessionDate: localStorage.getItem('lastPomodoroDate')
+        });
     }
 
     // Быстрый старт Pomodoro (из навигации)
