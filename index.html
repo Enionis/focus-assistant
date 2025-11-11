@@ -5,13 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FocusHelper - Помощник по Pomodoro</title>
     <script src="https://st.max.ru/js/max-web-app.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/webllm.min.js"></script>  
+    <script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/webllm.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="app">
         <div class="loading">🎯 Загружаем FocusHelper...</div>
     </div>
+    <script>
+        // Убедимся, что webllm доступен как глобальная переменная
+        window.addEventListener('load', () => {
+            if (!window.webllm) {
+                console.warn('WebLLM не загрузился, но продолжаем работу...');
+            }
+        });
+    </script>
     <script type="module" src="app.js"></script>
 </body>
 </html>

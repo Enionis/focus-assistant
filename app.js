@@ -40,11 +40,52 @@ class FocusHelperApp {
     }
 
     // ---------- LLM ----------
+    async waitForWebLLM(maxWait = 10000) {
+        const startTime = Date.now();
+        // Проверяем различные возможные имена в window
+        const checkWebLLM = () => {
+            // Проверяем window.webllm, window.WebLLM и другие варианты
+            if (window.webllm) return window.webllm;
+            if (window.WebLLM) return window.WebLLM;
+            // Проверяем через hasOwnProperty для безопасности
+            if (window.hasOwnProperty('webllm') && window.webllm) return window.webllm;
+            return null;
+        };
+        
+        let webllm = checkWebLLM();
+        while (!webllm && (Date.now() - startTime) < maxWait) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            webllm = checkWebLLM();
+        }
+        
+        if (!webllm) {
+            console.warn('WebLLM не найден после ожидания. Проверьте загрузку скрипта из CDN.');
+            // Полезная отладочная информация
+            const relevantKeys = Object.keys(window).filter(k => 
+                k.toLowerCase().includes('llm') || 
+                k.toLowerCase().includes('web') ||
+                k.toLowerCase().includes('mlc')
+            );
+            if (relevantKeys.length > 0) {
+                console.warn('Найденные связанные глобальные переменные:', relevantKeys);
+            }
+        }
+        
+        return webllm;
+    }
+
     async initLLM() {
         try {
             if (!navigator.gpu) {
               console.warn('WebGPU недоступен. Открой в Chrome/Edge/Safari (настольный) или будет медленно без воркера.');
               // можно работать без LLM; верни null, если логика допускает
+              return null;
+            }
+        
+            // Ждем загрузки webllm
+            const webllm = await this.waitForWebLLM();
+            if (!webllm) {
+              console.warn('WebLLM библиотека не загрузилась');
               return null;
             }
         
