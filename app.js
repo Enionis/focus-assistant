@@ -234,17 +234,13 @@ class FocusHelperApp {
     }
 
     async generateTaskPlanWithAI(taskDescription) {
-        try {
-            // Используем улучшенную локальную логику (работает без API и CORS проблем)
-            // Для использования внешних API нужен прокси-сервер из-за CORS ограничений
-            
-            // Пытаемся использовать улучшенную логику с более детальным анализом
-            return this.generateTaskPlanFallback(taskDescription);
-            
-        } catch (error) {
-            console.error('Ошибка генерации плана с AI:', error);
-            return this.generateTaskPlanFallback(taskDescription);
-        }
+        // Используем улучшенную локальную логику (работает без API и CORS проблем)
+        // ВСЕ ВНЕШНИЕ API ВЫЗОВЫ УДАЛЕНЫ - используется только локальная логика
+        // Для использования внешних API нужен прокси-сервер из-за CORS ограничений
+        
+        // Используем улучшенную логику с детальным анализом задачи
+        // Это работает мгновенно и полностью офлайн
+        return this.generateTaskPlanFallback(taskDescription);
     }
     
     // Улучшенная функция для анализа задачи и генерации плана
