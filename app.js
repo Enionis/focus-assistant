@@ -3,7 +3,7 @@ class FocusHelperApp {
         this.currentView = 'onboarding';
         this.userData = null;
         this.eventListenersAttached = false;
-        this.apiBaseUrl = 'http://localhost:8000'; 
+        this.apiBaseUrl = 'https://focus-assistant-railway-production.up.railway.app'; 
         this.initUserData(); 
         this.timerInterval = null;
         this.timeLeft = 30;
