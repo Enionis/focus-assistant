@@ -233,14 +233,332 @@ class FocusHelperApp {
         this.syncWithBot();
     }
 
-    async generateTaskPlanWithAI(taskDescription) {
-        // Используем улучшенную локальную логику (работает без API и CORS проблем)
-        // ВСЕ ВНЕШНИЕ API ВЫЗОВЫ УДАЛЕНЫ - используется только локальная логика
-        // Для использования внешних API нужен прокси-сервер из-за CORS ограничений
+    async generateTaskPlanWithAI(taskDescription, statusCallback = null) {
+        // Пробуем использовать бесплатные LLM API для генерации плана
+        // Используем несколько вариантов с fallback на локальную логику
         
-        // Используем улучшенную логику с детальным анализом задачи
-        // Это работает мгновенно и полностью офлайн
+        const updateStatus = (message) => {
+            if (statusCallback) statusCallback(message);
+        };
+        
+        // Вариант 1: Hugging Face Inference API (бесплатный, без API ключа)
+        try {
+            const hfToken = localStorage.getItem('hf_api_key') || '';
+            const tokenStatus = hfToken ? ' (с токеном)' : ' (публичный API)';
+            updateStatus(`🤖 Пробую Hugging Face AI${tokenStatus}...`);
+            const plan = await this.generatePlanWithHuggingFace(taskDescription);
+            if (plan && plan.length > 0) {
+                updateStatus('✅ План сгенерирован с помощью Hugging Face AI');
+                return plan;
+            }
+        } catch (error) {
+            console.log('Hugging Face API недоступен, пробуем другие варианты:', error);
+            updateStatus('⚠️ Hugging Face недоступен, пробую другие варианты...');
+        }
+        
+        // Вариант 2: Groq API (требует API ключ, но очень быстрый и бесплатный)
+        try {
+            const groqApiKey = localStorage.getItem('groq_api_key');
+            if (groqApiKey) {
+                updateStatus('⚡ Пробую Groq AI (быстрый)...');
+                const plan = await this.generatePlanWithGroq(taskDescription, groqApiKey);
+                if (plan && plan.length > 0) {
+                    updateStatus('✅ План сгенерирован с помощью Groq AI');
+                    return plan;
+                }
+            }
+        } catch (error) {
+            console.log('Groq API недоступен:', error);
+            updateStatus('⚠️ Groq недоступен, пробую другие варианты...');
+        }
+        
+        // Вариант 3: Together AI (требует API ключ, бесплатный tier доступен)
+        try {
+            const togetherApiKey = localStorage.getItem('together_api_key');
+            if (togetherApiKey) {
+                updateStatus('🔮 Пробую Together AI...');
+                const plan = await this.generatePlanWithTogetherAI(taskDescription, togetherApiKey);
+                if (plan && plan.length > 0) {
+                    updateStatus('✅ План сгенерирован с помощью Together AI');
+                    return plan;
+                }
+            }
+        } catch (error) {
+            console.log('Together AI недоступен:', error);
+            updateStatus('⚠️ Together AI недоступен...');
+        }
+        
+        // Fallback: используем улучшенную локальную логику
+        console.log('Используется локальная логика генерации плана');
+        updateStatus('📝 Использую локальную логику генерации плана...');
         return this.generateTaskPlanFallback(taskDescription);
+    }
+    
+    async generatePlanWithHuggingFace(taskDescription) {
+        // Используем бесплатные модели через Hugging Face Inference API
+        // Пробуем несколько моделей на случай проблем с CORS или доступностью
+        
+        const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги (подзадачи) для выполнения методом Pomodoro.
+
+Задача: "${taskDescription}"
+
+Верни ТОЛЬКО JSON массив подзадач в следующем формате (без дополнительного текста):
+[
+  {"title": "Название подзадачи 1", "estimatedPomodoros": число},
+  {"title": "Название подзадачи 2", "estimatedPomodoros": число}
+]
+
+Где:
+- title: краткое и конкретное название подзадачи
+- estimatedPomodoros: оценка количества сессий Pomodoro (по 30 минут каждая) для выполнения подзадачи (от 1 до 10)
+
+Создай 3-7 подзадач в зависимости от сложности задачи. Подзадачи должны быть конкретными и выполнимыми.`;
+
+        // Получаем токен из localStorage (если есть)
+        const hfToken = localStorage.getItem('hf_api_key') || '';
+        
+        // Формируем заголовки с токеном, если он есть
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (hfToken) {
+            headers['Authorization'] = `Bearer ${hfToken}`;
+        }
+
+        // Список моделей для попыток (от более мощных к более простым)
+        const models = [
+            'mistralai/Mistral-7B-Instruct-v0.2',
+            'HuggingFaceH4/zephyr-7b-beta',
+            'microsoft/Phi-3-mini-4k-instruct'
+        ];
+
+        for (const model of models) {
+            try {
+                const response = await fetch(
+                    `https://api-inference.huggingface.co/models/${model}`,
+                    {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({
+                            inputs: prompt,
+                            parameters: {
+                                max_new_tokens: 500,
+                                temperature: 0.7,
+                                return_full_text: false
+                            }
+                        })
+                    }
+                );
+
+                // Если модель загружается, ждем немного
+                if (response.status === 503) {
+                    const data = await response.json();
+                    if (data.estimated_time) {
+                        console.log(`Модель ${model} загружается, ожидание ${data.estimated_time} секунд...`);
+                        await new Promise(resolve => setTimeout(resolve, Math.min(data.estimated_time * 1000, 10000)));
+                        continue; // Пробуем следующую модель
+                    }
+                }
+
+                if (!response.ok) {
+                    continue; // Пробуем следующую модель
+                }
+
+                const data = await response.json();
+                
+                // Извлекаем текст ответа
+                let text = '';
+                if (Array.isArray(data) && data[0] && data[0].generated_text) {
+                    text = data[0].generated_text;
+                } else if (data.generated_text) {
+                    text = data.generated_text;
+                } else if (typeof data === 'string') {
+                    text = data;
+                }
+
+                if (!text) {
+                    continue; // Пробуем следующую модель
+                }
+
+                // Очищаем текст от markdown форматирования и извлекаем JSON
+                text = text.trim();
+                text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                
+                // Пытаемся найти JSON в тексте
+                const jsonMatch = text.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                    const jsonText = jsonMatch[0];
+                    const parsed = JSON.parse(jsonText);
+                    
+                    // Преобразуем в нужный формат
+                    return parsed.map((item, index) => ({
+                        id: Date.now() + index,
+                        title: item.title || item.name || `Подзадача ${index + 1}`,
+                        estimatedPomodoros: Math.max(1, Math.min(10, parseInt(item.estimatedPomodoros) || 2)),
+                        completedPomodoros: 0
+                    }));
+                }
+            } catch (error) {
+                // Если это CORS ошибка или другая проблема, пробуем следующую модель
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    console.log(`CORS ошибка для модели ${model}, пробуем следующую`);
+                    continue;
+                }
+                console.log(`Ошибка для модели ${model}:`, error.message);
+                continue;
+            }
+        }
+        
+        throw new Error('Все модели Hugging Face недоступны');
+    }
+    
+    async generatePlanWithGroq(taskDescription, apiKey) {
+        // Groq API - очень быстрый и бесплатный (требует регистрацию и API ключ)
+        // Получить ключ можно на https://console.groq.com/
+        
+        const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги (подзадачи) для выполнения методом Pomodoro.
+
+Задача: "${taskDescription}"
+
+Верни ТОЛЬКО JSON массив подзадач в следующем формате (без дополнительного текста):
+[
+  {"title": "Название подзадачи 1", "estimatedPomodoros": число},
+  {"title": "Название подзадачи 2", "estimatedPomodoros": число}
+]
+
+Где:
+- title: краткое и конкретное название подзадачи
+- estimatedPomodoros: оценка количества сессий Pomodoro (по 30 минут каждая) для выполнения подзадачи (от 1 до 10)
+
+Создай 3-7 подзадач в зависимости от сложности задачи. Подзадачи должны быть конкретными и выполнимыми.`;
+
+        try {
+            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'llama-3.1-8b-instant', // Бесплатная быстрая модель
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'Ты помощник, который всегда отвечает только валидным JSON без дополнительного текста.'
+                        },
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 500
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const text = data.choices[0]?.message?.content || '';
+            
+            // Очищаем текст и извлекаем JSON
+            let cleanText = text.trim();
+            cleanText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            
+            const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                const jsonText = jsonMatch[0];
+                const parsed = JSON.parse(jsonText);
+                
+                return parsed.map((item, index) => ({
+                    id: Date.now() + index,
+                    title: item.title || item.name || `Подзадача ${index + 1}`,
+                    estimatedPomodoros: Math.max(1, Math.min(10, parseInt(item.estimatedPomodoros) || 2)),
+                    completedPomodoros: 0
+                }));
+            }
+            
+            throw new Error('Не удалось извлечь JSON из ответа');
+        } catch (error) {
+            console.error('Ошибка при генерации плана через Groq:', error);
+            throw error;
+        }
+    }
+    
+    async generatePlanWithTogetherAI(taskDescription, apiKey) {
+        // Together AI - бесплатный tier с хорошими моделями
+        // Получить ключ можно на https://api.together.xyz/
+        
+        const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги (подзадачи) для выполнения методом Pomodoro.
+
+Задача: "${taskDescription}"
+
+Верни ТОЛЬКО JSON массив подзадач в следующем формате (без дополнительного текста):
+[
+  {"title": "Название подзадачи 1", "estimatedPomodoros": число},
+  {"title": "Название подзадачи 2", "estimatedPomodoros": число}
+]
+
+Где:
+- title: краткое и конкретное название подзадачи
+- estimatedPomodoros: оценка количества сессий Pomodoro (по 30 минут каждая) для выполнения подзадачи (от 1 до 10)
+
+Создай 3-7 подзадач в зависимости от сложности задачи. Подзадачи должны быть конкретными и выполнимыми.`;
+
+        try {
+            const response = await fetch('https://api.together.xyz/inference', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'meta-llama/Llama-3-8b-chat-hf', // Бесплатная модель
+                    prompt: prompt,
+                    max_tokens: 500,
+                    temperature: 0.7,
+                    top_p: 0.7,
+                    top_k: 50,
+                    repetition_penalty: 1,
+                    stop: ['</s>', '\n\n\n']
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const text = data.output?.choices?.[0]?.text || data.output?.text || '';
+            
+            if (!text) {
+                throw new Error('Пустой ответ от API');
+            }
+            
+            // Очищаем текст и извлекаем JSON
+            let cleanText = text.trim();
+            cleanText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            
+            const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                const jsonText = jsonMatch[0];
+                const parsed = JSON.parse(jsonText);
+                
+                return parsed.map((item, index) => ({
+                    id: Date.now() + index,
+                    title: item.title || item.name || `Подзадача ${index + 1}`,
+                    estimatedPomodoros: Math.max(1, Math.min(10, parseInt(item.estimatedPomodoros) || 2)),
+                    completedPomodoros: 0
+                }));
+            }
+            
+            throw new Error('Не удалось извлечь JSON из ответа');
+        } catch (error) {
+            console.error('Ошибка при генерации плана через Together AI:', error);
+            throw error;
+        }
     }
     
     // Улучшенная функция для анализа задачи и генерации плана
@@ -1769,13 +2087,37 @@ class FocusHelperApp {
                     </div>
 
                     <div class="panel">
-                        <div class="label">🤖 Генерация планов</div>
+                        <div class="label">🤖 Генерация планов с ИИ</div>
                         <div class="caption" style="margin-bottom: 12px; opacity: 0.7;">
                             Система автоматически анализирует описание задачи и создает оптимальный план действий. 
                             Поддерживаются различные типы задач: экзамены, курсовые, проекты, изучение и другие.
                             <br><br>
                             <strong>Как это работает:</strong> Система определяет тип задачи, оценивает сложность и генерирует 
                             структурированный план с оценкой времени в сессиях Pomodoro.
+                        </div>
+                        
+                        <div style="margin-top: 16px;">
+                            <div class="label" style="margin-bottom: 8px;">Hugging Face API Token (опционально)</div>
+                            <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
+                                Токен улучшает работу ИИ: больше лимитов, меньше задержек. 
+                                Получить токен можно на <a href="https://huggingface.co/settings/tokens" target="_blank" style="color: var(--primary); text-decoration: underline;">huggingface.co/settings/tokens</a>
+                            </div>
+                            <input 
+                                type="password" 
+                                id="hfApiToken" 
+                                placeholder="hf_xxxxxxxxxxxxxxxxxxxxx" 
+                                value="${hfApiKey}"
+                                style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                            />
+                            ${hasApiKey ? '<div style="color: var(--success); font-size: 12px; margin-top: 4px;">✓ Токен сохранен</div>' : '<div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">Токен не установлен (будет использован публичный API)</div>'}
+                            <button 
+                                class="btn secondary" 
+                                data-action="clearHfToken" 
+                                style="margin-top: 8px; width: 100%;"
+                                ${!hasApiKey ? 'disabled' : ''}
+                            >
+                                🗑️ Удалить токен
+                            </button>
                         </div>
                     </div>
 
@@ -2156,6 +2498,15 @@ class FocusHelperApp {
                 const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
                 const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
                 
+                // Сохраняем Hugging Face токен
+                const hfToken = document.getElementById('hfApiToken')?.value?.trim() || '';
+                if (hfToken) {
+                    localStorage.setItem('hf_api_key', hfToken);
+                } else {
+                    // Если поле пустое, удаляем токен
+                    localStorage.removeItem('hf_api_key');
+                }
+                
                 this.settings.pomodoroLength = pomodoroLength;
                 this.settings.dailyHours = dailyHours;
                 this.settings.breakLength = breakLength;
@@ -2163,6 +2514,10 @@ class FocusHelperApp {
                 this.saveSettings(this.settings);
                 alert('✅ Настройки сохранены!');
                 this.navigateTo('home');
+            } else if (action === 'clearHfToken') {
+                localStorage.removeItem('hf_api_key');
+                alert('✅ Токен Hugging Face удален');
+                this.renderApp();
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
             } else if (action === 'createTask') {
@@ -2184,11 +2539,19 @@ class FocusHelperApp {
                 if (analyzeBtn) analyzeBtn.disabled = true;
                 if (analyzeText) analyzeText.style.display = 'none';
                 if (analyzeLoader) analyzeLoader.style.display = 'inline';
-                if (planDiv) planDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">⏳ Генерирую план с помощью AI...</div>';
+                if (planDiv) planDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">⏳ Подключаюсь к AI сервису...</div>';
                 
                 try {
+                    // Обновляем статус во время генерации
+                    const updateStatus = (message) => {
+                        if (planDiv) {
+                            planDiv.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-secondary);">${message}</div>`;
+                        }
+                    };
+                    
                     // Генерируем план с помощью AI
-                    const subTasks = await this.generateTaskPlanWithAI(desc);
+                    updateStatus('⏳ Генерирую план с помощью AI...');
+                    const subTasks = await this.generateTaskPlanWithAI(desc, updateStatus);
                     
                     // Показываем сгенерированный план
                     if (planDiv) {
