@@ -241,26 +241,59 @@ class FocusHelperApp {
             if (statusCallback) statusCallback(message);
         };
         
-        // Вариант 1: Hugging Face Inference API (бесплатный, без API ключа)
+        // Вариант 1: OpenRouter API ⭐ (приоритетный, бесплатные модели, работает из браузера)
         try {
-            const hfToken = localStorage.getItem('hf_api_key') || '';
-            const tokenStatus = hfToken ? ' (с токеном)' : ' (публичный API)';
-            updateStatus(`🤖 Пробую Hugging Face AI${tokenStatus}...`);
-            const plan = await this.generatePlanWithHuggingFace(taskDescription);
-            if (plan && plan.length > 0) {
-                updateStatus('✅ План сгенерирован с помощью Hugging Face AI');
-                return plan;
+            const openRouterApiKey = localStorage.getItem('openrouter_api_key');
+            if (openRouterApiKey) {
+                updateStatus('🌐 Пробую OpenRouter AI...');
+                const plan = await this.generatePlanWithOpenRouter(taskDescription, openRouterApiKey);
+                if (plan && plan.length > 0) {
+                    updateStatus('✅ План сгенерирован с помощью OpenRouter AI');
+                    return plan;
+                }
             }
         } catch (error) {
-            console.log('Hugging Face API недоступен, пробуем другие варианты:', error);
-            updateStatus('⚠️ Hugging Face недоступен, пробую другие варианты...');
+            console.log('OpenRouter API недоступен:', error);
+            updateStatus('⚠️ OpenRouter недоступен, пробую другие варианты...');
         }
         
-        // Вариант 2: Groq API (требует API ключ, но очень быстрый и бесплатный)
+        // Вариант 2: Google Gemini API (бесплатный tier, работает из браузера)
+        try {
+            const geminiApiKey = localStorage.getItem('gemini_api_key');
+            if (geminiApiKey) {
+                updateStatus('🔮 Пробую Google Gemini AI...');
+                const plan = await this.generatePlanWithGemini(taskDescription, geminiApiKey);
+                if (plan && plan.length > 0) {
+                    updateStatus('✅ План сгенерирован с помощью Gemini AI');
+                    return plan;
+                }
+            }
+        } catch (error) {
+            console.log('Gemini API недоступен:', error);
+            updateStatus('⚠️ Gemini недоступен, пробую другие варианты...');
+        }
+        
+        // Вариант 3: Cohere API (бесплатный tier, работает из браузера)
+        try {
+            const cohereApiKey = localStorage.getItem('cohere_api_key');
+            if (cohereApiKey) {
+                updateStatus('💬 Пробую Cohere AI...');
+                const plan = await this.generatePlanWithCohere(taskDescription, cohereApiKey);
+                if (plan && plan.length > 0) {
+                    updateStatus('✅ План сгенерирован с помощью Cohere AI');
+                    return plan;
+                }
+            }
+        } catch (error) {
+            console.log('Cohere API недоступен:', error);
+            updateStatus('⚠️ Cohere недоступен, пробую другие варианты...');
+        }
+        
+        // Вариант 4: Groq API (если есть ключ)
         try {
             const groqApiKey = localStorage.getItem('groq_api_key');
             if (groqApiKey) {
-                updateStatus('⚡ Пробую Groq AI (быстрый)...');
+                updateStatus('⚡ Пробую Groq AI...');
                 const plan = await this.generatePlanWithGroq(taskDescription, groqApiKey);
                 if (plan && plan.length > 0) {
                     updateStatus('✅ План сгенерирован с помощью Groq AI');
@@ -269,10 +302,9 @@ class FocusHelperApp {
             }
         } catch (error) {
             console.log('Groq API недоступен:', error);
-            updateStatus('⚠️ Groq недоступен, пробую другие варианты...');
         }
         
-        // Вариант 3: Together AI (требует API ключ, бесплатный tier доступен)
+        // Вариант 5: Together AI (если есть ключ)
         try {
             const togetherApiKey = localStorage.getItem('together_api_key');
             if (togetherApiKey) {
@@ -285,7 +317,6 @@ class FocusHelperApp {
             }
         } catch (error) {
             console.log('Together AI недоступен:', error);
-            updateStatus('⚠️ Together AI недоступен...');
         }
         
         // Fallback: используем улучшенную локальную логику
@@ -294,7 +325,11 @@ class FocusHelperApp {
         return this.generateTaskPlanFallback(taskDescription);
     }
     
-    async generatePlanWithHuggingFace(taskDescription) {
+    async generatePlanWithHuggingFace(taskDescription, proxyUrl = null) {
+        // ВАЖНО: Hugging Face Inference API НЕ РАБОТАЕТ напрямую из браузера из-за CORS!
+        // Для использования нужен прокси-сервер или бэкенд
+        // Используйте Groq или Together AI для работы из браузера
+        
         // Используем бесплатные модели через Hugging Face Inference API
         // Пробуем несколько моделей на случай проблем с CORS или доступностью
         
@@ -332,11 +367,16 @@ class FocusHelperApp {
             'microsoft/Phi-3-mini-4k-instruct'
         ];
 
+        // Если есть прокси, используем его
+        const apiUrl = proxyUrl || 'https://api-inference.huggingface.co';
+        
         for (const model of models) {
             try {
-                const response = await fetch(
-                    `https://api-inference.huggingface.co/models/${model}`,
-                    {
+                const url = proxyUrl 
+                    ? `${proxyUrl}/models/${model}` 
+                    : `https://api-inference.huggingface.co/models/${model}`;
+                
+                const response = await fetch(url, {
                         method: 'POST',
                         headers: headers,
                         body: JSON.stringify({
@@ -399,10 +439,10 @@ class FocusHelperApp {
                     }));
                 }
             } catch (error) {
-                // Если это CORS ошибка или другая проблема, пробуем следующую модель
-                if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    console.log(`CORS ошибка для модели ${model}, пробуем следующую`);
-                    continue;
+                // Если это CORS ошибка, это ожидаемо - Hugging Face API не поддерживает CORS
+                if (error.name === 'TypeError' && (error.message.includes('fetch') || error.message.includes('CORS'))) {
+                    console.log(`CORS ошибка для модели ${model} (ожидаемо - Hugging Face API не поддерживает CORS из браузера)`);
+                    throw new Error('CORS_ERROR: Hugging Face API не поддерживает запросы из браузера. Используйте Groq или Together AI, или настройте прокси-сервер.');
                 }
                 console.log(`Ошибка для модели ${model}:`, error.message);
                 continue;
@@ -557,6 +597,274 @@ class FocusHelperApp {
             throw new Error('Не удалось извлечь JSON из ответа');
         } catch (error) {
             console.error('Ошибка при генерации плана через Together AI:', error);
+            throw error;
+        }
+    }
+    
+    async generatePlanWithGemini(taskDescription, apiKey) {
+        // Google Gemini API - бесплатный tier, работает из браузера
+        // Получить ключ можно на https://aistudio.google.com/apikey
+        
+        const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги (подзадачи) для выполнения методом Pomodoro.
+
+Задача: "${taskDescription}"
+
+Верни ТОЛЬКО JSON массив подзадач в следующем формате (без дополнительного текста):
+[
+  {"title": "Название подзадачи 1", "estimatedPomodoros": число},
+  {"title": "Название подзадачи 2", "estimatedPomodoros": число}
+]
+
+Где:
+- title: краткое и конкретное название подзадачи
+- estimatedPomodoros: оценка количества сессий Pomodoro (по 30 минут каждая) для выполнения подзадачи (от 1 до 10)
+
+Создай 3-7 подзадач в зависимости от сложности задачи. Подзадачи должны быть конкретными и выполнимыми.`;
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: prompt
+                            }]
+                        }],
+                        generationConfig: {
+                            temperature: 0.7,
+                            maxOutputTokens: 500
+                        }
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            
+            if (!text) {
+                throw new Error('Пустой ответ от API');
+            }
+            
+            // Очищаем текст и извлекаем JSON
+            let cleanText = text.trim();
+            cleanText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            
+            const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                const jsonText = jsonMatch[0];
+                const parsed = JSON.parse(jsonText);
+                
+                return parsed.map((item, index) => ({
+                    id: Date.now() + index,
+                    title: item.title || item.name || `Подзадача ${index + 1}`,
+                    estimatedPomodoros: Math.max(1, Math.min(10, parseInt(item.estimatedPomodoros) || 2)),
+                    completedPomodoros: 0
+                }));
+            }
+            
+            throw new Error('Не удалось извлечь JSON из ответа');
+        } catch (error) {
+            console.error('Ошибка при генерации плана через Gemini:', error);
+            throw error;
+        }
+    }
+    
+    async generatePlanWithOpenRouter(taskDescription, apiKey) {
+        // OpenRouter API - агрегатор с бесплатными моделями
+        // Получить ключ можно на https://openrouter.ai/keys
+        // Поддерживает множество бесплатных моделей
+        
+        const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги (подзадачи) для выполнения методом Pomodoro.
+
+Задача: "${taskDescription}"
+
+Верни ТОЛЬКО JSON массив подзадач в следующем формате (без дополнительного текста):
+[
+  {"title": "Название подзадачи 1", "estimatedPomodoros": число},
+  {"title": "Название подзадачи 2", "estimatedPomodoros": число}
+]
+
+Где:
+- title: краткое и конкретное название подзадачи
+- estimatedPomodoros: оценка количества сессий Pomodoro (по 30 минут каждая) для выполнения подзадачи (от 1 до 10)
+
+Создай 3-7 подзадач в зависимости от сложности задачи. Подзадачи должны быть конкретными и выполнимыми.`;
+
+        // Список бесплатных моделей для попыток (от более мощных к более простым)
+        const freeModels = [
+            'meta-llama/llama-3.2-3b-instruct:free',
+            'google/gemma-2-2b-it:free',
+            'mistralai/mistral-7b-instruct:free',
+            'qwen/qwen-2-1.5b-instruct:free'
+        ];
+
+        for (const model of freeModels) {
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`,
+                        'HTTP-Referer': window.location.origin,
+                        'X-Title': 'Focus Assistant'
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            {
+                                role: 'system',
+                                content: 'Ты помощник, который всегда отвечает только валидным JSON без дополнительного текста. Отвечай строго в формате JSON массива.'
+                            },
+                            {
+                                role: 'user',
+                                content: prompt
+                            }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    // Если модель недоступна, пробуем следующую
+                    if (response.status === 400 || response.status === 404) {
+                        console.log(`Модель ${model} недоступна, пробуем следующую`);
+                        continue;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error?.message || 'Unknown error'}`);
+                }
+
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content || '';
+                
+                if (!text) {
+                    console.log(`Пустой ответ от модели ${model}, пробуем следующую`);
+                    continue;
+                }
+                
+                // Очищаем текст и извлекаем JSON
+                let cleanText = text.trim();
+                cleanText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                
+                // Убираем возможные префиксы
+                cleanText = cleanText.replace(/^[^{[]*/, '').replace(/[^}\]]*$/, '');
+                
+                const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                    try {
+                        const jsonText = jsonMatch[0];
+                        const parsed = JSON.parse(jsonText);
+                        
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            return parsed.map((item, index) => ({
+                                id: Date.now() + index,
+                                title: item.title || item.name || `Подзадача ${index + 1}`,
+                                estimatedPomodoros: Math.max(1, Math.min(10, parseInt(item.estimatedPomodoros) || 2)),
+                                completedPomodoros: 0
+                            }));
+                        }
+                    } catch (parseError) {
+                        console.log(`Ошибка парсинга JSON от модели ${model}:`, parseError);
+                        continue;
+                    }
+                }
+                
+                console.log(`Не удалось извлечь JSON от модели ${model}, пробуем следующую`);
+            } catch (error) {
+                // Если это не ошибка модели, пробуем следующую
+                if (error.message && !error.message.includes('HTTP error')) {
+                    console.log(`Ошибка с моделью ${model}:`, error.message);
+                    continue;
+                }
+                // Если это критическая ошибка (например, неверный API ключ), пробрасываем дальше
+                if (error.message && error.message.includes('401') || error.message.includes('403')) {
+                    throw error;
+                }
+                continue;
+            }
+        }
+        
+        throw new Error('Все бесплатные модели OpenRouter недоступны');
+    }
+    
+    async generatePlanWithCohere(taskDescription, apiKey) {
+        // Cohere API - бесплатный tier
+        // Получить ключ можно на https://dashboard.cohere.com/api-keys
+        
+        const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги (подзадачи) для выполнения методом Pomodoro.
+
+Задача: "${taskDescription}"
+
+Верни ТОЛЬКО JSON массив подзадач в следующем формате (без дополнительного текста):
+[
+  {"title": "Название подзадачи 1", "estimatedPomodoros": число},
+  {"title": "Название подзадачи 2", "estimatedPomodoros": число}
+]
+
+Где:
+- title: краткое и конкретное название подзадачи
+- estimatedPomodoros: оценка количества сессий Pomodoro (по 30 минут каждая) для выполнения подзадачи (от 1 до 10)
+
+Создай 3-7 подзадач в зависимости от сложности задачи. Подзадачи должны быть конкретными и выполнимыми.`;
+
+        try {
+            const response = await fetch('https://api.cohere.ai/v1/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'command',
+                    prompt: prompt,
+                    max_tokens: 500,
+                    temperature: 0.7,
+                    stop_sequences: ['\n\n\n']
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const text = data.generations?.[0]?.text || '';
+            
+            if (!text) {
+                throw new Error('Пустой ответ от API');
+            }
+            
+            // Очищаем текст и извлекаем JSON
+            let cleanText = text.trim();
+            cleanText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            
+            const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                const jsonText = jsonMatch[0];
+                const parsed = JSON.parse(jsonText);
+                
+                return parsed.map((item, index) => ({
+                    id: Date.now() + index,
+                    title: item.title || item.name || `Подзадача ${index + 1}`,
+                    estimatedPomodoros: Math.max(1, Math.min(10, parseInt(item.estimatedPomodoros) || 2)),
+                    completedPomodoros: 0
+                }));
+            }
+            
+            throw new Error('Не удалось извлечь JSON из ответа');
+        } catch (error) {
+            console.error('Ошибка при генерации плана через Cohere:', error);
             throw error;
         }
     }
@@ -2097,27 +2405,103 @@ class FocusHelperApp {
                         </div>
                         
                         <div style="margin-top: 16px;">
-                            <div class="label" style="margin-bottom: 8px;">Hugging Face API Token (опционально)</div>
+                            <div class="label" style="margin-bottom: 8px;">🌐 OpenRouter API Key ⭐ (рекомендуется, приоритетный)</div>
                             <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
-                                Токен улучшает работу ИИ: больше лимитов, меньше задержек. 
-                                Получить токен можно на <a href="https://huggingface.co/settings/tokens" target="_blank" style="color: var(--primary); text-decoration: underline;">huggingface.co/settings/tokens</a>
+                                Бесплатные модели доступны. Работает из браузера. Используется первым при генерации планов. 
+                                Получить ключ: <a href="https://openrouter.ai/keys" target="_blank" style="color: var(--primary); text-decoration: underline;">openrouter.ai/keys</a>
                             </div>
                             <input 
                                 type="password" 
-                                id="hfApiToken" 
-                                placeholder="hf_xxxxxxxxxxxxxxxxxxxxx" 
-                                value="${hfApiKey}"
+                                id="openRouterApiKey" 
+                                placeholder="sk-or-v1-xxxxxxxxxxxxxxxxxxxxx" 
+                                value="${localStorage.getItem('openrouter_api_key') || ''}"
                                 style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
                             />
-                            ${hasApiKey ? '<div style="color: var(--success); font-size: 12px; margin-top: 4px;">✓ Токен сохранен</div>' : '<div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">Токен не установлен (будет использован публичный API)</div>'}
-                            <button 
-                                class="btn secondary" 
-                                data-action="clearHfToken" 
-                                style="margin-top: 8px; width: 100%;"
-                                ${!hasApiKey ? 'disabled' : ''}
-                            >
-                                🗑️ Удалить токен
-                            </button>
+                        </div>
+                        
+                        <div style="margin-top: 16px;">
+                            <div class="label" style="margin-bottom: 8px;">🔮 Google Gemini API Key</div>
+                            <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
+                                Бесплатный tier, работает из браузера. 
+                                Получить ключ: <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--primary); text-decoration: underline;">aistudio.google.com/apikey</a>
+                            </div>
+                            <input 
+                                type="password" 
+                                id="geminiApiKey" 
+                                placeholder="AIzaSyxxxxxxxxxxxxxxxxxxxxx" 
+                                value="${localStorage.getItem('gemini_api_key') || ''}"
+                                style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                            />
+                        </div>
+                        
+                        <div style="margin-top: 16px;">
+                            <div class="label" style="margin-bottom: 8px;">💬 Cohere API Key</div>
+                            <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
+                                Бесплатный tier доступен. Работает из браузера. 
+                                Получить ключ: <a href="https://dashboard.cohere.com/api-keys" target="_blank" style="color: var(--primary); text-decoration: underline;">dashboard.cohere.com/api-keys</a>
+                            </div>
+                            <input 
+                                type="password" 
+                                id="cohereApiKey" 
+                                placeholder="xxxxxxxxxxxxxxxxxxxxx" 
+                                value="${localStorage.getItem('cohere_api_key') || ''}"
+                                style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                            />
+                        </div>
+                        
+                        <div style="margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);">
+                            <div class="label" style="margin-bottom: 8px; font-size: 12px; opacity: 0.7;">Дополнительные API (опционально)</div>
+                            
+                            <div style="margin-top: 12px;">
+                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">⚡ Groq API Key</div>
+                                <input 
+                                    type="password" 
+                                    id="groqApiKey" 
+                                    placeholder="gsk_xxxxxxxxxxxxxxxxxxxxx" 
+                                    value="${localStorage.getItem('groq_api_key') || ''}"
+                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                                />
+                            </div>
+                            
+                            <div style="margin-top: 12px;">
+                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">🔮 Together AI API Key</div>
+                                <input 
+                                    type="password" 
+                                    id="togetherApiKey" 
+                                    placeholder="xxxxxxxxxxxxxxxxxxxxx" 
+                                    value="${localStorage.getItem('together_api_key') || ''}"
+                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 16px; padding: 12px; background: var(--warning-light, #fff3cd); border-radius: 8px; border: 1px solid var(--warning, #ffc107);">
+                            <div class="label" style="margin-bottom: 8px; color: var(--warning-dark, #856404);">⚠️ Hugging Face API</div>
+                            <div class="caption" style="opacity: 0.8; font-size: 12px; color: var(--warning-dark, #856404);">
+                                <strong>Не работает напрямую из браузера</strong> из-за CORS ограничений. 
+                                Для использования нужен прокси-сервер. 
+                                <br><br>
+                                <strong>Рекомендуется:</strong> Используйте Groq или Together AI - они работают напрямую из браузера без прокси.
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">Hugging Face Token (только с прокси)</div>
+                                <input 
+                                    type="password" 
+                                    id="hfApiToken" 
+                                    placeholder="hf_xxxxxxxxxxxxxxxxxxxxx" 
+                                    value="${hfApiKey}"
+                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                                />
+                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">URL прокси-сервера (опционально)</div>
+                                <input 
+                                    type="text" 
+                                    id="hfProxyUrl" 
+                                    placeholder="https://your-proxy-server.com/api" 
+                                    value="${localStorage.getItem('hf_proxy_url') || ''}"
+                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
+                                />
+                                ${hasApiKey ? '<div style="color: var(--success); font-size: 12px; margin-top: 4px;">✓ Токен сохранен</div>' : '<div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">Токен не установлен</div>'}
+                            </div>
                         </div>
                     </div>
 
@@ -2498,13 +2882,52 @@ class FocusHelperApp {
                 const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
                 const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
                 
-                // Сохраняем Hugging Face токен
-                const hfToken = document.getElementById('hfApiToken')?.value?.trim() || '';
-                if (hfToken) {
-                    localStorage.setItem('hf_api_key', hfToken);
+                // Сохраняем API ключи
+                const geminiKey = document.getElementById('geminiApiKey')?.value?.trim() || '';
+                if (geminiKey) {
+                    localStorage.setItem('gemini_api_key', geminiKey);
                 } else {
-                    // Если поле пустое, удаляем токен
+                    localStorage.removeItem('gemini_api_key');
+                }
+                
+                const openRouterKey = document.getElementById('openRouterApiKey')?.value?.trim() || '';
+                if (openRouterKey) {
+                    localStorage.setItem('openrouter_api_key', openRouterKey);
+                } else {
+                    localStorage.removeItem('openrouter_api_key');
+                }
+                
+                const cohereKey = document.getElementById('cohereApiKey')?.value?.trim() || '';
+                if (cohereKey) {
+                    localStorage.setItem('cohere_api_key', cohereKey);
+                } else {
+                    localStorage.removeItem('cohere_api_key');
+                }
+                
+                const groqKey = document.getElementById('groqApiKey')?.value?.trim() || '';
+                if (groqKey) {
+                    localStorage.setItem('groq_api_key', groqKey);
+                } else {
+                    localStorage.removeItem('groq_api_key');
+                }
+                
+                const togetherKey = document.getElementById('togetherApiKey')?.value?.trim() || '';
+                if (togetherKey) {
+                    localStorage.setItem('together_api_key', togetherKey);
+                } else {
+                    localStorage.removeItem('together_api_key');
+                }
+                
+                // Сохраняем Hugging Face токен и прокси (только если есть прокси)
+                const hfToken = document.getElementById('hfApiToken')?.value?.trim() || '';
+                const hfProxy = document.getElementById('hfProxyUrl')?.value?.trim() || '';
+                if (hfToken && hfProxy) {
+                    localStorage.setItem('hf_api_key', hfToken);
+                    localStorage.setItem('hf_proxy_url', hfProxy);
+                } else {
+                    // Если нет прокси, удаляем токен
                     localStorage.removeItem('hf_api_key');
+                    localStorage.removeItem('hf_proxy_url');
                 }
                 
                 this.settings.pomodoroLength = pomodoroLength;
