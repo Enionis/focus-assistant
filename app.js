@@ -234,94 +234,33 @@ class FocusHelperApp {
     }
 
     async generateTaskPlanWithAI(taskDescription, statusCallback = null) {
-        // Пробуем использовать бесплатные LLM API для генерации плана
-        // Используем несколько вариантов с fallback на локальную логику
+        // Используем OpenRouter API для генерации плана или локальную логику как fallback
         
         const updateStatus = (message) => {
             if (statusCallback) statusCallback(message);
         };
         
-        // Вариант 1: OpenRouter API ⭐ (приоритетный, бесплатные модели, работает из браузера)
+        // Пробуем OpenRouter API
         try {
             const openRouterApiKey = localStorage.getItem('openrouter_api_key');
             if (openRouterApiKey) {
-                updateStatus('🌐 Пробую OpenRouter AI...');
+                updateStatus('🌐 Генерирую план с помощью OpenRouter AI...');
                 const plan = await this.generatePlanWithOpenRouter(taskDescription, openRouterApiKey);
                 if (plan && plan.length > 0) {
                     updateStatus('✅ План сгенерирован с помощью OpenRouter AI');
                     return plan;
                 }
+            } else {
+                updateStatus('📝 API ключ не найден, использую локальную логику...');
             }
         } catch (error) {
             console.log('OpenRouter API недоступен:', error);
-            updateStatus('⚠️ OpenRouter недоступен, пробую другие варианты...');
-        }
-        
-        // Вариант 2: Google Gemini API (бесплатный tier, работает из браузера)
-        try {
-            const geminiApiKey = localStorage.getItem('gemini_api_key');
-            if (geminiApiKey) {
-                updateStatus('🔮 Пробую Google Gemini AI...');
-                const plan = await this.generatePlanWithGemini(taskDescription, geminiApiKey);
-                if (plan && plan.length > 0) {
-                    updateStatus('✅ План сгенерирован с помощью Gemini AI');
-                    return plan;
-                }
-            }
-        } catch (error) {
-            console.log('Gemini API недоступен:', error);
-            updateStatus('⚠️ Gemini недоступен, пробую другие варианты...');
-        }
-        
-        // Вариант 3: Cohere API (бесплатный tier, работает из браузера)
-        try {
-            const cohereApiKey = localStorage.getItem('cohere_api_key');
-            if (cohereApiKey) {
-                updateStatus('💬 Пробую Cohere AI...');
-                const plan = await this.generatePlanWithCohere(taskDescription, cohereApiKey);
-                if (plan && plan.length > 0) {
-                    updateStatus('✅ План сгенерирован с помощью Cohere AI');
-                    return plan;
-                }
-            }
-        } catch (error) {
-            console.log('Cohere API недоступен:', error);
-            updateStatus('⚠️ Cohere недоступен, пробую другие варианты...');
-        }
-        
-        // Вариант 4: Groq API (если есть ключ)
-        try {
-            const groqApiKey = localStorage.getItem('groq_api_key');
-            if (groqApiKey) {
-                updateStatus('⚡ Пробую Groq AI...');
-                const plan = await this.generatePlanWithGroq(taskDescription, groqApiKey);
-                if (plan && plan.length > 0) {
-                    updateStatus('✅ План сгенерирован с помощью Groq AI');
-                    return plan;
-                }
-            }
-        } catch (error) {
-            console.log('Groq API недоступен:', error);
-        }
-        
-        // Вариант 5: Together AI (если есть ключ)
-        try {
-            const togetherApiKey = localStorage.getItem('together_api_key');
-            if (togetherApiKey) {
-                updateStatus('🔮 Пробую Together AI...');
-                const plan = await this.generatePlanWithTogetherAI(taskDescription, togetherApiKey);
-                if (plan && plan.length > 0) {
-                    updateStatus('✅ План сгенерирован с помощью Together AI');
-                    return plan;
-                }
-            }
-        } catch (error) {
-            console.log('Together AI недоступен:', error);
+            updateStatus('⚠️ OpenRouter недоступен, использую локальную логику...');
         }
         
         // Fallback: используем улучшенную локальную логику
         console.log('Используется локальная логика генерации плана');
-        updateStatus('📝 Использую локальную логику генерации плана...');
+        updateStatus('📝 Генерирую план с помощью локальной логики...');
         return this.generateTaskPlanFallback(taskDescription);
     }
     
@@ -2354,8 +2293,6 @@ class FocusHelperApp {
     }
 
     renderSettings() {
-        const hfApiKey = localStorage.getItem('hf_api_key') || '';
-        const hasApiKey = hfApiKey.length > 0;
         
         return `
             <div class="app-container">
@@ -2397,17 +2334,19 @@ class FocusHelperApp {
                     <div class="panel">
                         <div class="label">🤖 Генерация планов с ИИ</div>
                         <div class="caption" style="margin-bottom: 12px; opacity: 0.7;">
-                            Система автоматически анализирует описание задачи и создает оптимальный план действий. 
+                            Система использует <strong>OpenRouter AI</strong> для автоматической генерации планов задач. 
                             Поддерживаются различные типы задач: экзамены, курсовые, проекты, изучение и другие.
                             <br><br>
-                            <strong>Как это работает:</strong> Система определяет тип задачи, оценивает сложность и генерирует 
-                            структурированный план с оценкой времени в сессиях Pomodoro.
+                            <strong>Как это работает:</strong> При нажатии "🤖 Разобрать с AI" система отправляет описание задачи в OpenRouter, 
+                            который использует бесплатные модели для разбивки задачи на конкретные шаги с оценкой времени в сессиях Pomodoro.
+                            <br><br>
+                            Если API ключ не указан или OpenRouter недоступен, используется локальная логика генерации плана.
                         </div>
                         
                         <div style="margin-top: 16px;">
-                            <div class="label" style="margin-bottom: 8px;">🌐 OpenRouter API Key ⭐ (рекомендуется, приоритетный)</div>
+                            <div class="label" style="margin-bottom: 8px;">🌐 OpenRouter API Key</div>
                             <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
-                                Бесплатные модели доступны. Работает из браузера. Используется первым при генерации планов. 
+                                Бесплатные модели доступны. Работает из браузера. 
                                 Получить ключ: <a href="https://openrouter.ai/keys" target="_blank" style="color: var(--primary); text-decoration: underline;">openrouter.ai/keys</a>
                             </div>
                             <input 
@@ -2417,91 +2356,7 @@ class FocusHelperApp {
                                 value="${localStorage.getItem('openrouter_api_key') || ''}"
                                 style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
                             />
-                        </div>
-                        
-                        <div style="margin-top: 16px;">
-                            <div class="label" style="margin-bottom: 8px;">🔮 Google Gemini API Key</div>
-                            <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
-                                Бесплатный tier, работает из браузера. 
-                                Получить ключ: <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--primary); text-decoration: underline;">aistudio.google.com/apikey</a>
-                            </div>
-                            <input 
-                                type="password" 
-                                id="geminiApiKey" 
-                                placeholder="AIzaSyxxxxxxxxxxxxxxxxxxxxx" 
-                                value="${localStorage.getItem('gemini_api_key') || ''}"
-                                style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                            />
-                        </div>
-                        
-                        <div style="margin-top: 16px;">
-                            <div class="label" style="margin-bottom: 8px;">💬 Cohere API Key</div>
-                            <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
-                                Бесплатный tier доступен. Работает из браузера. 
-                                Получить ключ: <a href="https://dashboard.cohere.com/api-keys" target="_blank" style="color: var(--primary); text-decoration: underline;">dashboard.cohere.com/api-keys</a>
-                            </div>
-                            <input 
-                                type="password" 
-                                id="cohereApiKey" 
-                                placeholder="xxxxxxxxxxxxxxxxxxxxx" 
-                                value="${localStorage.getItem('cohere_api_key') || ''}"
-                                style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                            />
-                        </div>
-                        
-                        <div style="margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);">
-                            <div class="label" style="margin-bottom: 8px; font-size: 12px; opacity: 0.7;">Дополнительные API (опционально)</div>
-                            
-                            <div style="margin-top: 12px;">
-                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">⚡ Groq API Key</div>
-                                <input 
-                                    type="password" 
-                                    id="groqApiKey" 
-                                    placeholder="gsk_xxxxxxxxxxxxxxxxxxxxx" 
-                                    value="${localStorage.getItem('groq_api_key') || ''}"
-                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                                />
-                            </div>
-                            
-                            <div style="margin-top: 12px;">
-                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">🔮 Together AI API Key</div>
-                                <input 
-                                    type="password" 
-                                    id="togetherApiKey" 
-                                    placeholder="xxxxxxxxxxxxxxxxxxxxx" 
-                                    value="${localStorage.getItem('together_api_key') || ''}"
-                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                                />
-                            </div>
-                        </div>
-                        
-                        <div style="margin-top: 16px; padding: 12px; background: var(--warning-light, #fff3cd); border-radius: 8px; border: 1px solid var(--warning, #ffc107);">
-                            <div class="label" style="margin-bottom: 8px; color: var(--warning-dark, #856404);">⚠️ Hugging Face API</div>
-                            <div class="caption" style="opacity: 0.8; font-size: 12px; color: var(--warning-dark, #856404);">
-                                <strong>Не работает напрямую из браузера</strong> из-за CORS ограничений. 
-                                Для использования нужен прокси-сервер. 
-                                <br><br>
-                                <strong>Рекомендуется:</strong> Используйте Groq или Together AI - они работают напрямую из браузера без прокси.
-                            </div>
-                            <div style="margin-top: 12px;">
-                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">Hugging Face Token (только с прокси)</div>
-                                <input 
-                                    type="password" 
-                                    id="hfApiToken" 
-                                    placeholder="hf_xxxxxxxxxxxxxxxxxxxxx" 
-                                    value="${hfApiKey}"
-                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                                />
-                                <div class="label" style="margin-bottom: 8px; font-size: 12px;">URL прокси-сервера (опционально)</div>
-                                <input 
-                                    type="text" 
-                                    id="hfProxyUrl" 
-                                    placeholder="https://your-proxy-server.com/api" 
-                                    value="${localStorage.getItem('hf_proxy_url') || ''}"
-                                    style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                                />
-                                ${hasApiKey ? '<div style="color: var(--success); font-size: 12px; margin-top: 4px;">✓ Токен сохранен</div>' : '<div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">Токен не установлен</div>'}
-                            </div>
+                            ${localStorage.getItem('openrouter_api_key') ? '<div style="color: var(--success); font-size: 12px; margin-top: 4px;">✓ API ключ сохранен</div>' : '<div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">API ключ не установлен (будет использована локальная логика)</div>'}
                         </div>
                     </div>
 
@@ -2882,52 +2737,12 @@ class FocusHelperApp {
                 const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
                 const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
                 
-                // Сохраняем API ключи
-                const geminiKey = document.getElementById('geminiApiKey')?.value?.trim() || '';
-                if (geminiKey) {
-                    localStorage.setItem('gemini_api_key', geminiKey);
-                } else {
-                    localStorage.removeItem('gemini_api_key');
-                }
-                
+                // Сохраняем OpenRouter API ключ
                 const openRouterKey = document.getElementById('openRouterApiKey')?.value?.trim() || '';
                 if (openRouterKey) {
                     localStorage.setItem('openrouter_api_key', openRouterKey);
                 } else {
                     localStorage.removeItem('openrouter_api_key');
-                }
-                
-                const cohereKey = document.getElementById('cohereApiKey')?.value?.trim() || '';
-                if (cohereKey) {
-                    localStorage.setItem('cohere_api_key', cohereKey);
-                } else {
-                    localStorage.removeItem('cohere_api_key');
-                }
-                
-                const groqKey = document.getElementById('groqApiKey')?.value?.trim() || '';
-                if (groqKey) {
-                    localStorage.setItem('groq_api_key', groqKey);
-                } else {
-                    localStorage.removeItem('groq_api_key');
-                }
-                
-                const togetherKey = document.getElementById('togetherApiKey')?.value?.trim() || '';
-                if (togetherKey) {
-                    localStorage.setItem('together_api_key', togetherKey);
-                } else {
-                    localStorage.removeItem('together_api_key');
-                }
-                
-                // Сохраняем Hugging Face токен и прокси (только если есть прокси)
-                const hfToken = document.getElementById('hfApiToken')?.value?.trim() || '';
-                const hfProxy = document.getElementById('hfProxyUrl')?.value?.trim() || '';
-                if (hfToken && hfProxy) {
-                    localStorage.setItem('hf_api_key', hfToken);
-                    localStorage.setItem('hf_proxy_url', hfProxy);
-                } else {
-                    // Если нет прокси, удаляем токен
-                    localStorage.removeItem('hf_api_key');
-                    localStorage.removeItem('hf_proxy_url');
                 }
                 
                 this.settings.pomodoroLength = pomodoroLength;
