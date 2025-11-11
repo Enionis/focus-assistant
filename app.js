@@ -34,7 +34,7 @@ class FocusHelperApp {
 
         // === LLM интеграция ===
         this.llm = null;
-        this.llmReady = this.initLLM();
+        initLLM().then(engine => { this.llm = engine; });
 
         this.init();
     }
@@ -42,43 +42,40 @@ class FocusHelperApp {
     // ---------- LLM ----------
     async initLLM() {
         try {
-          const hasWebGPU = !!(navigator.gpu);
-          if (!hasWebGPU) {
-            console.warn('WebGPU недоступен — локальная LLM не запустится. Открой в десктопном Chrome/Edge/Safari.');
+            if (!navigator.gpu) {
+              console.warn('WebGPU недоступен. Открой в Chrome/Edge/Safari (настольный) или будет медленно без воркера.');
+              // можно работать без LLM; верни null, если логика допускает
+              return null;
+            }
+        
+            const workerUrl = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/worker.js";
+            let engine;
+        
+            try {
+              // сначала пробуем worker с type: 'module'
+              const worker = new Worker(workerUrl, { type: "module" });
+              engine = await webllm.CreateWebWorkerEngine(worker, {
+                model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
+                initProgressCallback: (p) => {
+                  // console.log('LLM init:', p);
+                }
+              });
+            } catch (e) {
+              console.warn("Не вышло через WebWorker, пробуем без воркера:", e);
+              engine = await webllm.CreateMLCEngine({
+                model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
+                initProgressCallback: (p) => {
+                  // console.log('LLM init (no-worker):', p);
+                }
+              });
+            }
+        
+            console.log('✅ LLM готова');
+            return engine;
+          } catch (e) {
+            console.error('Ошибка инициализации LLM:', e);
             return null;
           }
-      
-          // 1) пробуем module Worker с CDN jsDelivr
-          const workerUrl = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/worker.js";
-          let engine = null;
-      
-          try {
-            const worker = new Worker(workerUrl, { type: "module" });
-            engine = await webllm.CreateWebWorkerEngine(worker, {
-              model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
-              initProgressCallback: (p) => {
-                // сюда можно прокинуть прогресс загрузки (p.progress, p.text)
-                // console.log('LLM load:', p);
-              }
-            });
-          } catch (e) {
-            console.warn("Module Worker не удалось создать, пробуем без воркера:", e);
-            // 2) fallback: без воркера (в том же потоке). Работает медленнее, но без CORS/Proxy-танцев.
-            engine = await webllm.CreateMLCEngine({
-              model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
-              initProgressCallback: (p) => {
-                // console.log('LLM load (no-worker):', p);
-              }
-            });
-          }
-      
-          this.llm = engine;
-          console.log('✅ LLM готова');
-          return engine;
-        } catch (e) {
-          console.error('Ошибка инициализации LLM:', e);
-          return null;
-        }
       }      
 
     async aiDecomposeTask(description) {
