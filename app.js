@@ -235,69 +235,10 @@ class FocusHelperApp {
 
     async generateTaskPlanWithAI(taskDescription) {
         try {
-            // Используем Hugging Face Inference API (бесплатный, без подписки)
-            // Можно использовать разные модели, например:
-            // - mistralai/Mistral-7B-Instruct-v0.2
-            // - meta-llama/Llama-2-7b-chat-hf
-            // - microsoft/Phi-3-mini-4k-instruct
+            // Используем улучшенную локальную логику (работает без API и CORS проблем)
+            // Для использования внешних API нужен прокси-сервер из-за CORS ограничений
             
-            const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги для выполнения методом Pomodoro (каждый шаг должен быть выполним за 1-4 сессии Pomodoro по 30 минут).
-
-Задача: "${taskDescription}"
-
-Верни ответ ТОЛЬКО в формате JSON массива, где каждый элемент это объект с полями:
-- "title": краткое название шага (максимум 5 слов)
-- "estimatedPomodoros": число от 1 до 4 (сколько сессий Pomodoro нужно)
-
-Пример ответа:
-[{"title": "Собрать материалы и ресурсы", "estimatedPomodoros": 2}, {"title": "Изучить базовую теорию", "estimatedPomodoros": 3}, {"title": "Практические упражнения", "estimatedPomodoros": 4}]
-
-Ответ должен быть ТОЛЬКО JSON, без дополнительного текста.`;
-
-            // Вариант 1: Hugging Face Inference API (бесплатный)
-            // Для использования нужен API токен (можно получить бесплатно на huggingface.co)
-            // Если токена нет, используем fallback вариант
-            const hfApiKey = localStorage.getItem('hf_api_key') || '';
-            
-            if (hfApiKey) {
-                const response = await fetch('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${hfApiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        inputs: prompt,
-                        parameters: {
-                            max_new_tokens: 500,
-                            temperature: 0.7,
-                            return_full_text: false
-                        }
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data[0]?.generated_text) {
-                        const text = data[0].generated_text.trim();
-                        // Пытаемся извлечь JSON из ответа
-                        const jsonMatch = text.match(/\[[\s\S]*\]/);
-                        if (jsonMatch) {
-                            const parsed = JSON.parse(jsonMatch[0]);
-                            return parsed.map((item, idx) => ({
-                                id: Date.now() + idx + 1,
-                                title: item.title || `Шаг ${idx + 1}`,
-                                estimatedPomodoros: item.estimatedPomodoros || 2,
-                                completed: false,
-                                completedPomodoros: 0
-                            }));
-                        }
-                    }
-                }
-            }
-
-            // Вариант 2: Groq API (быстрый, бесплатный, без регистрации для ограниченного использования)
-            // Или используем локальную логику как fallback
+            // Пытаемся использовать улучшенную логику с более детальным анализом
             return this.generateTaskPlanFallback(taskDescription);
             
         } catch (error) {
@@ -305,48 +246,250 @@ class FocusHelperApp {
             return this.generateTaskPlanFallback(taskDescription);
         }
     }
+    
+    // Улучшенная функция для анализа задачи и генерации плана
+    analyzeTaskDescription(taskDescription) {
+        const desc = taskDescription.toLowerCase();
+        const words = desc.split(/\s+/);
+        
+        // Определяем тип задачи и сложность
+        let taskType = 'general';
+        let complexity = 'medium';
+        let subject = null;
+        
+        // Типы задач
+        if (desc.includes('экзамен') || desc.includes('экзамену') || desc.includes('экзамены')) {
+            taskType = 'exam';
+            complexity = desc.includes('финал') || desc.includes('итогов') ? 'high' : 'medium';
+        } else if (desc.includes('курсовая') || desc.includes('курсовую') || desc.includes('курсовая работа')) {
+            taskType = 'coursework';
+            complexity = 'high';
+        } else if (desc.includes('диплом') || desc.includes('дипломная')) {
+            taskType = 'thesis';
+            complexity = 'very_high';
+        } else if (desc.includes('проект') || desc.includes('проекта')) {
+            taskType = 'project';
+            complexity = desc.includes('большой') || desc.includes('крупный') ? 'high' : 'medium';
+        } else if (desc.includes('изуч') || desc.includes('учить') || desc.includes('обучен') || desc.includes('изучить')) {
+            taskType = 'learning';
+            complexity = 'medium';
+        } else if (desc.includes('подготов') || desc.includes('подготовить')) {
+            taskType = 'preparation';
+            complexity = 'medium';
+        } else if (desc.includes('написать') || desc.includes('написат')) {
+            taskType = 'writing';
+            complexity = desc.includes('стать') || desc.includes('эссе') ? 'medium' : 'high';
+        } else if (desc.includes('создать') || desc.includes('разработ')) {
+            taskType = 'creation';
+            complexity = 'medium';
+        }
+        
+        // Определяем предмет/область
+        const subjects = {
+            'математик': 'math',
+            'физик': 'physics',
+            'хими': 'chemistry',
+            'биолог': 'biology',
+            'истори': 'history',
+            'литератур': 'literature',
+            'английск': 'english',
+            'программирован': 'programming',
+            'код': 'programming',
+            'алгоритм': 'programming',
+            'веб': 'web',
+            'дизайн': 'design'
+        };
+        
+        for (const [key, value] of Object.entries(subjects)) {
+            if (desc.includes(key)) {
+                subject = value;
+                break;
+            }
+        }
+        
+        return { taskType, complexity, subject, words };
+    }
 
     generateTaskPlanFallback(taskDescription) {
-        // Умный fallback на основе ключевых слов
-        const desc = taskDescription.toLowerCase();
+        // Улучшенная умная логика на основе детального анализа
+        const analysis = this.analyzeTaskDescription(taskDescription);
+        const { taskType, complexity, subject } = analysis;
         let subTasks = [];
+        const baseId = Date.now();
 
-        if (desc.includes('экзамен') || desc.includes('экзамену')) {
-            subTasks = [
-                { id: Date.now() + 1, title: 'Собрать материалы и конспекты', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 2, title: 'Составить план изучения', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Изучить теорию и основные понятия', estimatedPomodoros: 4, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 4, title: 'Решить практические задачи', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 5, title: 'Повторить и закрепить материал', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
-            ];
-        } else if (desc.includes('курсовая') || desc.includes('курсовую') || desc.includes('курсовая работа')) {
-            subTasks = [
-                { id: Date.now() + 1, title: 'Выбрать тему и собрать источники', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 2, title: 'Составить план работы', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Изучить литературу', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 4, title: 'Написать основную часть', estimatedPomodoros: 6, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 5, title: 'Оформить и проверить работу', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
-            ];
-        } else if (desc.includes('проект') || desc.includes('проекта')) {
-            subTasks = [
-                { id: Date.now() + 1, title: 'Планирование и анализ требований', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 2, title: 'Проектирование решения', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Реализация основной функциональности', estimatedPomodoros: 5, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 4, title: 'Тестирование и отладка', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 5, title: 'Документация и финализация', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
-            ];
-        } else if (desc.includes('изуч') || desc.includes('учить') || desc.includes('обучен')) {
-            subTasks = [
-                { id: Date.now() + 1, title: 'Подготовить материалы для изучения', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 2, title: 'Изучить базовые концепции', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Практические упражнения', estimatedPomodoros: 4, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 4, title: 'Повторение и закрепление', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
-            ];
+        // Шаблоны планов для разных типов задач
+        const planTemplates = {
+            exam: {
+                low: [
+                    { title: 'Повторить основные темы', pomodoros: 2 },
+                    { title: 'Решить типовые задачи', pomodoros: 2 },
+                    { title: 'Проверить знания', pomodoros: 1 }
+                ],
+                medium: [
+                    { title: 'Собрать материалы и конспекты', pomodoros: 2 },
+                    { title: 'Составить план изучения', pomodoros: 1 },
+                    { title: 'Изучить теорию и основные понятия', pomodoros: 4 },
+                    { title: 'Решить практические задачи', pomodoros: 3 },
+                    { title: 'Повторить и закрепить материал', pomodoros: 2 }
+                ],
+                high: [
+                    { title: 'Собрать все материалы и конспекты', pomodoros: 3 },
+                    { title: 'Составить детальный план изучения', pomodoros: 2 },
+                    { title: 'Изучить теорию по всем темам', pomodoros: 6 },
+                    { title: 'Решить задачи всех типов', pomodoros: 5 },
+                    { title: 'Повторить сложные моменты', pomodoros: 3 },
+                    { title: 'Провести финальное повторение', pomodoros: 2 }
+                ]
+            },
+            coursework: {
+                medium: [
+                    { title: 'Выбрать тему и собрать источники', pomodoros: 2 },
+                    { title: 'Составить план работы', pomodoros: 1 },
+                    { title: 'Изучить литературу', pomodoros: 3 },
+                    { title: 'Написать основную часть', pomodoros: 6 },
+                    { title: 'Оформить и проверить работу', pomodoros: 2 }
+                ],
+                high: [
+                    { title: 'Выбрать тему и провести исследование', pomodoros: 3 },
+                    { title: 'Составить детальный план работы', pomodoros: 2 },
+                    { title: 'Изучить научную литературу', pomodoros: 4 },
+                    { title: 'Написать введение и основную часть', pomodoros: 8 },
+                    { title: 'Написать заключение и выводы', pomodoros: 3 },
+                    { title: 'Оформить работу и проверить', pomodoros: 3 }
+                ]
+            },
+            thesis: {
+                very_high: [
+                    { title: 'Выбрать тему и провести анализ', pomodoros: 4 },
+                    { title: 'Составить структуру работы', pomodoros: 2 },
+                    { title: 'Изучить научные источники', pomodoros: 6 },
+                    { title: 'Написать теоретическую часть', pomodoros: 8 },
+                    { title: 'Провести практическое исследование', pomodoros: 10 },
+                    { title: 'Написать практическую часть', pomodoros: 8 },
+                    { title: 'Написать заключение', pomodoros: 4 },
+                    { title: 'Оформить и проверить работу', pomodoros: 4 }
+                ]
+            },
+            project: {
+                low: [
+                    { title: 'Планирование проекта', pomodoros: 1 },
+                    { title: 'Реализация основных функций', pomodoros: 3 },
+                    { title: 'Тестирование и доработка', pomodoros: 2 }
+                ],
+                medium: [
+                    { title: 'Планирование и анализ требований', pomodoros: 2 },
+                    { title: 'Проектирование решения', pomodoros: 3 },
+                    { title: 'Реализация основной функциональности', pomodoros: 5 },
+                    { title: 'Тестирование и отладка', pomodoros: 3 },
+                    { title: 'Документация и финализация', pomodoros: 2 }
+                ],
+                high: [
+                    { title: 'Детальное планирование и анализ', pomodoros: 3 },
+                    { title: 'Проектирование архитектуры', pomodoros: 4 },
+                    { title: 'Реализация базовой функциональности', pomodoros: 6 },
+                    { title: 'Реализация расширенной функциональности', pomodoros: 6 },
+                    { title: 'Тестирование всех компонентов', pomodoros: 4 },
+                    { title: 'Оптимизация и рефакторинг', pomodoros: 3 },
+                    { title: 'Документация и финализация', pomodoros: 3 }
+                ]
+            },
+            learning: {
+                low: [
+                    { title: 'Подготовить материалы', pomodoros: 1 },
+                    { title: 'Изучить основы', pomodoros: 2 },
+                    { title: 'Практика', pomodoros: 2 }
+                ],
+                medium: [
+                    { title: 'Подготовить материалы для изучения', pomodoros: 1 },
+                    { title: 'Изучить базовые концепции', pomodoros: 3 },
+                    { title: 'Практические упражнения', pomodoros: 4 },
+                    { title: 'Повторение и закрепление', pomodoros: 2 }
+                ],
+                high: [
+                    { title: 'Подготовить учебные материалы', pomodoros: 2 },
+                    { title: 'Изучить базовые концепции', pomodoros: 4 },
+                    { title: 'Изучить продвинутые темы', pomodoros: 4 },
+                    { title: 'Практические упражнения', pomodoros: 5 },
+                    { title: 'Решение сложных задач', pomodoros: 4 },
+                    { title: 'Повторение и систематизация', pomodoros: 3 }
+                ]
+            },
+            preparation: {
+                medium: [
+                    { title: 'Определить цели подготовки', pomodoros: 1 },
+                    { title: 'Собрать необходимые материалы', pomodoros: 2 },
+                    { title: 'Составить план подготовки', pomodoros: 1 },
+                    { title: 'Изучить материал', pomodoros: 4 },
+                    { title: 'Практика и закрепление', pomodoros: 3 }
+                ]
+            },
+            writing: {
+                low: [
+                    { title: 'Подготовить материалы', pomodoros: 1 },
+                    { title: 'Написать текст', pomodoros: 3 },
+                    { title: 'Проверить и отредактировать', pomodoros: 1 }
+                ],
+                medium: [
+                    { title: 'Исследовать тему', pomodoros: 2 },
+                    { title: 'Составить план текста', pomodoros: 1 },
+                    { title: 'Написать черновик', pomodoros: 4 },
+                    { title: 'Отредактировать и улучшить', pomodoros: 2 },
+                    { title: 'Проверить и финализировать', pomodoros: 1 }
+                ],
+                high: [
+                    { title: 'Провести исследование темы', pomodoros: 3 },
+                    { title: 'Составить детальный план', pomodoros: 2 },
+                    { title: 'Написать введение и основную часть', pomodoros: 6 },
+                    { title: 'Написать заключение', pomodoros: 2 },
+                    { title: 'Редактирование и улучшение', pomodoros: 3 },
+                    { title: 'Финальная проверка', pomodoros: 2 }
+                ]
+            },
+            creation: {
+                medium: [
+                    { title: 'Планирование и концепция', pomodoros: 2 },
+                    { title: 'Подготовка материалов', pomodoros: 1 },
+                    { title: 'Создание основной части', pomodoros: 4 },
+                    { title: 'Доработка и улучшение', pomodoros: 2 },
+                    { title: 'Финализация', pomodoros: 1 }
+                ]
+            },
+            general: {
+                medium: [
+                    { title: 'Подготовка и планирование', pomodoros: 1 },
+                    { title: 'Основная работа', pomodoros: 3 },
+                    { title: 'Проверка и завершение', pomodoros: 2 }
+                ]
+            }
+        };
+
+        // Выбираем план на основе типа и сложности
+        const template = planTemplates[taskType];
+        if (template) {
+            const complexityKey = complexity === 'very_high' ? 'very_high' : 
+                                 complexity === 'high' ? 'high' : 
+                                 complexity === 'low' ? 'low' : 'medium';
+            
+            let plan = template[complexityKey] || template.medium || template.low || template.high;
+            
+            // Если нет плана для конкретной сложности, используем средний
+            if (!plan) {
+                plan = Object.values(template)[0];
+            }
+            
+            subTasks = plan.map((step, idx) => ({
+                id: baseId + idx + 1,
+                title: step.title,
+                estimatedPomodoros: Math.min(Math.max(step.pomodoros, 1), 10), // Ограничиваем 1-10
+                completed: false,
+                completedPomodoros: 0
+            }));
         } else {
+            // Fallback для неизвестных типов
             subTasks = [
-                { id: Date.now() + 1, title: 'Подготовка и планирование', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 2, title: 'Основная работа', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Проверка и завершение', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
+                { id: baseId + 1, title: 'Подготовка и планирование', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
+                { id: baseId + 2, title: 'Основная работа', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
+                { id: baseId + 3, title: 'Проверка и завершение', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
             ];
         }
 
@@ -1404,8 +1547,8 @@ class FocusHelperApp {
                     </div>
                     <div class="panel" style="margin-top: 16px; padding: 16px; background: var(--background-secondary);">
                         <div class="caption" style="opacity: 0.7;">
-                            💡 <strong>Совет:</strong> AI использует бесплатные открытые модели для генерации плана. 
-                            Для лучших результатов можно добавить API ключ Hugging Face в настройках.
+                            💡 <strong>Совет:</strong> Используется умная логика для автоматической генерации плана на основе описания задачи. 
+                            Система анализирует тип задачи, сложность и создает оптимальный план действий.
                         </div>
                     </div>
                 </div>
@@ -1630,22 +1773,14 @@ class FocusHelperApp {
                     </div>
 
                     <div class="panel">
-                        <div class="label">🤖 AI настройки (опционально)</div>
+                        <div class="label">🤖 Генерация планов</div>
                         <div class="caption" style="margin-bottom: 12px; opacity: 0.7;">
-                            Для улучшения качества генерации планов можно добавить бесплатный API ключ Hugging Face.
-                            <br><a href="https://huggingface.co/settings/tokens" target="_blank" style="color: var(--primary);">Получить ключ →</a>
+                            Система автоматически анализирует описание задачи и создает оптимальный план действий. 
+                            Поддерживаются различные типы задач: экзамены, курсовые, проекты, изучение и другие.
+                            <br><br>
+                            <strong>Как это работает:</strong> Система определяет тип задачи, оценивает сложность и генерирует 
+                            структурированный план с оценкой времени в сессиях Pomodoro.
                         </div>
-                        <input type="password" 
-                               id="hfApiKeyInput" 
-                               class="input" 
-                               placeholder="${hasApiKey ? '••••••••••••' : 'Введите API ключ Hugging Face'}" 
-                               value="${hasApiKey ? '••••••••••••' : ''}"
-                               style="margin-bottom: 8px;">
-                        <div style="display: flex; gap: 8px;">
-                            <button class="btn secondary" data-action="saveApiKey" style="flex: 1;">💾 Сохранить ключ</button>
-                            ${hasApiKey ? `<button class="btn tertiary" data-action="removeApiKey" style="flex: 1;">🗑️ Удалить</button>` : ''}
-                        </div>
-                        ${hasApiKey ? '<div style="margin-top: 8px; color: var(--success); font-size: 14px;">✅ API ключ сохранен</div>' : ''}
                     </div>
 
                     <button class="btn primary" data-action="saveSettings">💾 Сохранить настройки</button>
@@ -2032,22 +2167,6 @@ class FocusHelperApp {
                 this.saveSettings(this.settings);
                 alert('✅ Настройки сохранены!');
                 this.navigateTo('home');
-            } else if (action === 'saveApiKey') {
-                const apiKeyInput = document.getElementById('hfApiKeyInput');
-                const apiKey = apiKeyInput?.value?.trim();
-                if (apiKey && apiKey !== '••••••••••••') {
-                    localStorage.setItem('hf_api_key', apiKey);
-                    alert('✅ API ключ сохранен!');
-                    this.renderApp();
-                } else {
-                    alert('⚠️ Введите валидный API ключ');
-                }
-            } else if (action === 'removeApiKey') {
-                if (confirm('Удалить сохраненный API ключ?')) {
-                    localStorage.removeItem('hf_api_key');
-                    alert('✅ API ключ удален');
-                    this.renderApp();
-                }
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
             } else if (action === 'createTask') {
