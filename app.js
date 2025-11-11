@@ -2331,35 +2331,6 @@ class FocusHelperApp {
                         </div>
                     </div>
 
-                    <div class="panel">
-                        <div class="label">🤖 Генерация планов с ИИ</div>
-                        <div class="caption" style="margin-bottom: 12px; opacity: 0.7;">
-                            Система использует <strong>OpenRouter AI</strong> для автоматической генерации планов задач. 
-                            Поддерживаются различные типы задач: экзамены, курсовые, проекты, изучение и другие.
-                            <br><br>
-                            <strong>Как это работает:</strong> При нажатии "🤖 Разобрать с AI" система отправляет описание задачи в OpenRouter, 
-                            который использует бесплатные модели для разбивки задачи на конкретные шаги с оценкой времени в сессиях Pomodoro.
-                            <br><br>
-                            Если API ключ не указан или OpenRouter недоступен, используется локальная логика генерации плана.
-                        </div>
-                        
-                        <div style="margin-top: 16px;">
-                            <div class="label" style="margin-bottom: 8px;">🌐 OpenRouter API Key</div>
-                            <div class="caption" style="margin-bottom: 8px; opacity: 0.7; font-size: 12px;">
-                                Бесплатные модели доступны. Работает из браузера. 
-                                Получить ключ: <a href="https://openrouter.ai/keys" target="_blank" style="color: var(--primary); text-decoration: underline;">openrouter.ai/keys</a>
-                            </div>
-                            <input 
-                                type="password" 
-                                id="openRouterApiKey" 
-                                placeholder="sk-or-v1-xxxxxxxxxxxxxxxxxxxxx" 
-                                value="${localStorage.getItem('openrouter_api_key') || ''}"
-                                style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; margin-bottom: 8px;"
-                            />
-                            ${localStorage.getItem('openrouter_api_key') ? '<div style="color: var(--success); font-size: 12px; margin-top: 4px;">✓ API ключ сохранен</div>' : '<div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">API ключ не установлен (будет использована локальная логика)</div>'}
-                        </div>
-                    </div>
-
                     <button class="btn primary" data-action="saveSettings">💾 Сохранить настройки</button>
                 </div>
                 ${this.renderNavigation()}
