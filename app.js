@@ -3,8 +3,8 @@ class FocusHelperApp {
         this.currentView = 'onboarding';
         this.userData = null;
         this.eventListenersAttached = false;
-        this.apiBaseUrl = 'http://localhost:8000';
-        this.initUserData();
+        this.apiBaseUrl = 'http://localhost:8000'; 
+        this.initUserData(); 
         this.timerInterval = null;
         this.timeLeft = 30;
         this.isRunning = false;
@@ -12,7 +12,7 @@ class FocusHelperApp {
         this.activeTask = null;
         this.selectedTaskId = null;
         this.lastPomodoroFocus = null;
-
+        this.pendingTaskPlan = null;
         this.settings = {
             dailyHours: 4,
             productiveTime: 'morning',
@@ -20,7 +20,6 @@ class FocusHelperApp {
             breakLength: 5,
             isOnboarded: false
         };
-
         this.tasks = [];
         this.stats = {
             totalSessions: 0,
@@ -31,259 +30,8 @@ class FocusHelperApp {
             xp: 0,
             achievements: []
         };
-
-        // === LLM интеграция ===
-        this.llm = null;
-        this.llmReady = this.initLLM();
-
         this.init();
     }
-
-    // ---------- LLM ----------
-    async waitForWebLLM(maxWait = 15000) {
-        console.log('🔍 Начинаем поиск WebLLM...');
-        
-        // Сначала ждем немного, чтобы скрипты успели загрузиться
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Метод 1: Проверяем глобальные переменные после загрузки скрипта
-        const checkGlobalWebLLM = () => {
-            // Проверяем различные возможные имена
-            const candidates = [
-                window.webllm,
-                window.WebLLM,
-                window.mlc,
-                window.MLC
-            ];
-            
-            for (const candidate of candidates) {
-                if (candidate && typeof candidate === 'object') {
-                    if (typeof candidate.CreateWebWorkerEngine === 'function' || 
-                        typeof candidate.CreateMLCEngine === 'function') {
-                        console.log('✅ WebLLM найден как глобальная переменная:', candidate);
-                        return candidate;
-                    }
-                }
-            }
-            
-            // Проверяем прямые функции на window
-            if (typeof window.CreateWebWorkerEngine === 'function') {
-                console.log('✅ Найдена функция CreateWebWorkerEngine на window');
-                return {
-                    CreateWebWorkerEngine: window.CreateWebWorkerEngine,
-                    CreateMLCEngine: window.CreateMLCEngine
-                };
-            }
-            
-            return null;
-        };
-        
-        // Ждем появления глобальной переменной
-        const startTime = Date.now();
-        let webllm = checkGlobalWebLLM();
-        while (!webllm && (Date.now() - startTime) < maxWait) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-            webllm = checkGlobalWebLLM();
-        }
-        
-        if (webllm) {
-            window.webllm = webllm; // Кэшируем
-            return webllm;
-        }
-        
-        // Метод 2: Пробуем динамический импорт через различные CDN
-        console.log('Пробуем динамический импорт WebLLM...');
-        const cdnUrls = [
-            'https://esm.sh/@mlc-ai/web-llm',
-            'https://esm.sh/@mlc-ai/web-llm@latest',
-            'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/dist/index.js',
-            'https://unpkg.com/@mlc-ai/web-llm@latest/dist/index.js',
-            'https://cdn.skypack.dev/@mlc-ai/web-llm'
-        ];
-        
-        for (const url of cdnUrls) {
-            try {
-                console.log(`  Пробуем: ${url}`);
-                const module = await Promise.race([
-                    import(url),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-                ]);
-                
-                console.log('  Модуль загружен, ключи:', Object.keys(module).slice(0, 10));
-                
-                // Проверяем различные варианты экспорта
-                let api = module.default || module;
-                
-                // Если default - это объект с методами, используем его
-                if (api && typeof api === 'object') {
-                    if (typeof api.CreateWebWorkerEngine === 'function' || 
-                        typeof api.CreateMLCEngine === 'function') {
-                        console.log(`✅ WebLLM загружен из ${url}`);
-                        window.webllm = api;
-                        return api;
-                    }
-                    
-                    // Проверяем вложенные свойства
-                    if (api.webllm && typeof api.webllm.CreateWebWorkerEngine === 'function') {
-                        console.log(`✅ WebLLM найден в module.webllm из ${url}`);
-                        window.webllm = api.webllm;
-                        return api.webllm;
-                    }
-                }
-                
-                // Если методы экспортированы напрямую
-                if (typeof module.CreateWebWorkerEngine === 'function') {
-                    console.log(`✅ WebLLM методы найдены напрямую из ${url}`);
-                    window.webllm = module;
-                    return module;
-                }
-                
-            } catch (error) {
-                console.warn(`  ❌ Ошибка загрузки из ${url}:`, error.message);
-            }
-        }
-        
-        // Метод 3: Глубокий поиск в window
-        console.log('Выполняем глубокий поиск в window...');
-        for (const key in window) {
-            try {
-                if (key.toLowerCase().includes('llm') || key.toLowerCase().includes('mlc')) {
-                    const obj = window[key];
-                    if (obj && typeof obj === 'object') {
-                        const keys = Object.keys(obj);
-                        if (keys.some(k => k.includes('Create') && k.includes('Engine'))) {
-                            console.log(`  Найден объект window.${key} с ключами:`, keys.slice(0, 5));
-                            if (typeof obj.CreateWebWorkerEngine === 'function' || 
-                                typeof obj.CreateMLCEngine === 'function') {
-                                console.log(`✅ WebLLM найден в window.${key}`);
-                                window.webllm = obj;
-                                return obj;
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                // Игнорируем
-            }
-        }
-        
-        console.error('❌ WebLLM не найден. Возможные причины:');
-        console.error('1. CDN недоступен или заблокирован');
-        console.error('2. Модуль требует специальной настройки');
-        console.error('3. Неправильный путь к модулю');
-        console.error('4. Проблемы с CORS или CSP');
-        console.error('');
-        console.error('💡 Рекомендация: Проверьте вкладку Network в DevTools, есть ли запросы к CDN');
-        
-        return null;
-    }
-
-    async initLLM() {
-        try {
-            if (!navigator.gpu) {
-              console.warn('WebGPU недоступен. Открой в Chrome/Edge/Safari (настольный) или будет медленно без воркера.');
-              // можно работать без LLM; верни null, если логика допускает
-              return null;
-            }
-        
-            // Ждем загрузки webllm
-            const webllm = await this.waitForWebLLM();
-            if (!webllm) {
-              console.warn('WebLLM библиотека не загрузилась');
-              return null;
-            }
-        
-            const workerUrl = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/worker.js";
-            let engine;
-        
-            try {
-              // сначала пробуем worker с type: 'module'
-              const worker = new Worker(workerUrl, { type: "module" });
-              engine = await webllm.CreateWebWorkerEngine(worker, {
-                model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
-                initProgressCallback: (p) => {
-                  // console.log('LLM init:', p);
-                }
-              });
-            } catch (e) {
-              console.warn("Не вышло через WebWorker, пробуем без воркера:", e);
-              engine = await webllm.CreateMLCEngine({
-                model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
-                initProgressCallback: (p) => {
-                  // console.log('LLM init (no-worker):', p);
-                }
-              });
-            }
-        
-            console.log('✅ LLM готова');
-            return engine;
-          } catch (e) {
-            console.error('Ошибка инициализации LLM:', e);
-            return null;
-          }
-      }      
-
-    async aiDecomposeTask(description) {
-        await this.llmReady;
-        if (!this.llm) {
-            throw new Error('LLM недоступна (нет WebGPU или не инициализировалась).');
-        }
-
-        const system = `
-Ты помощник по продуктивности и планированию. На вход — описание задачи на русском.
-Верни СТРОГО валидный JSON:
-{
-  "subtasks": [{"title": "Строка", "estimatedPomodoros": Число}],
-  "notes": "Краткие советы одной строкой"
-}
-Правила:
-- 3..7 шагов.
-- estimatedPomodoros в диапазоне 1..4.
-- Без лишних полей, без комментариев.
-- Язык: русский.
-        `.trim();
-
-        const user = `Составь подробный план шагов по задаче: "${description}". Сначала быстрые подготовительные шаги, затем сложные.`;
-
-        const resp = await this.llm.chat.completions.create({
-            messages: [
-                { role: "system", content: system },
-                { role: "user", content: user }
-            ],
-            temperature: 0.4,
-            max_tokens: 600
-            // Если сборка поддерживает строго JSON: response_format: { type: "json_object" }
-        });
-
-        const text = (resp?.choices?.[0]?.message?.content || "").trim();
-        const jsonText = (text.match(/\{[\s\S]*\}$/) || [text])[0];
-
-        let data;
-        try {
-            data = JSON.parse(jsonText);
-        } catch (e) {
-            console.error('Невалидный JSON от модели:', text);
-            throw new Error('Модель вернула невалидный JSON. Попробуй укоротить описание.');
-        }
-
-        if (!Array.isArray(data.subtasks)) {
-            throw new Error('В ответе нет массива "subtasks".');
-        }
-
-        data.subtasks = data.subtasks
-            .slice(0, 7)
-            .map((st) => ({
-                title: String(st.title || '').trim().slice(0, 120) || 'Шаг',
-                estimatedPomodoros: Math.max(1, Math.min(4, parseInt(st.estimatedPomodoros, 10) || 1))
-            }))
-            .filter(st => st.title);
-
-        if (data.subtasks.length === 0) {
-            throw new Error('Модель не смогла предложить шаги.');
-        }
-        return data;
-    }
-    // ---------- /LLM ----------
 
     initUserData() {
         try {
@@ -313,7 +61,7 @@ class FocusHelperApp {
             console.error('❌ localStorage недоступен! Данные не будут сохраняться.');
             alert('⚠️ Внимание: localStorage недоступен. Статистика не будет сохраняться после закрытия браузера.\n\nВозможные причины:\n- Режим инкогнито\n- Браузер заблокировал хранилище\n- Недостаточно места');
         }
-
+        
         this.loadData();
         this.lastPomodoroFocus = localStorage.getItem('lastPomodoroFocus') || null;
         this.attachEventListeners();
@@ -357,7 +105,7 @@ class FocusHelperApp {
                     achievements: []
                 };
             }
-
+            
             if (!Array.isArray(this.stats.achievements)) {
                 this.stats.achievements = [];
             }
@@ -424,7 +172,7 @@ class FocusHelperApp {
 
     async syncWithBot() {
         let userId = this.userData?.userId;
-
+        
         if (!userId && typeof window !== 'undefined' && window.MaxWebApp) {
             try {
                 const maxWebApp = window.MaxWebApp;
@@ -441,7 +189,7 @@ class FocusHelperApp {
                 console.warn('Не удалось получить userId из Max Web App SDK:', e);
             }
         }
-
+        
         if (!userId) {
             console.log('ℹ️ Данные хранятся только локально (localStorage). userId не найден.');
             return;
@@ -474,6 +222,7 @@ class FocusHelperApp {
     }
 
     navigateTo(view) {
+        console.log('navigateTo called with view:', view, 'current view:', this.currentView);
         this.currentView = view;
         this.renderApp();
     }
@@ -484,22 +233,131 @@ class FocusHelperApp {
         this.syncWithBot();
     }
 
-    async createTask(taskDescription, deadline = null) {
+    async generateTaskPlanWithAI(taskDescription) {
+        try {
+            // Используем Hugging Face Inference API (бесплатный, без подписки)
+            // Можно использовать разные модели, например:
+            // - mistralai/Mistral-7B-Instruct-v0.2
+            // - meta-llama/Llama-2-7b-chat-hf
+            // - microsoft/Phi-3-mini-4k-instruct
+            
+            const prompt = `Ты помощник по планированию задач. Разбей следующую задачу на конкретные шаги для выполнения методом Pomodoro (каждый шаг должен быть выполним за 1-4 сессии Pomodoro по 30 минут).
+
+Задача: "${taskDescription}"
+
+Верни ответ ТОЛЬКО в формате JSON массива, где каждый элемент это объект с полями:
+- "title": краткое название шага (максимум 5 слов)
+- "estimatedPomodoros": число от 1 до 4 (сколько сессий Pomodoro нужно)
+
+Пример ответа:
+[{"title": "Собрать материалы и ресурсы", "estimatedPomodoros": 2}, {"title": "Изучить базовую теорию", "estimatedPomodoros": 3}, {"title": "Практические упражнения", "estimatedPomodoros": 4}]
+
+Ответ должен быть ТОЛЬКО JSON, без дополнительного текста.`;
+
+            // Вариант 1: Hugging Face Inference API (бесплатный)
+            // Для использования нужен API токен (можно получить бесплатно на huggingface.co)
+            // Если токена нет, используем fallback вариант
+            const hfApiKey = localStorage.getItem('hf_api_key') || '';
+            
+            if (hfApiKey) {
+                const response = await fetch('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${hfApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        inputs: prompt,
+                        parameters: {
+                            max_new_tokens: 500,
+                            temperature: 0.7,
+                            return_full_text: false
+                        }
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data[0]?.generated_text) {
+                        const text = data[0].generated_text.trim();
+                        // Пытаемся извлечь JSON из ответа
+                        const jsonMatch = text.match(/\[[\s\S]*\]/);
+                        if (jsonMatch) {
+                            const parsed = JSON.parse(jsonMatch[0]);
+                            return parsed.map((item, idx) => ({
+                                id: Date.now() + idx + 1,
+                                title: item.title || `Шаг ${idx + 1}`,
+                                estimatedPomodoros: item.estimatedPomodoros || 2,
+                                completed: false,
+                                completedPomodoros: 0
+                            }));
+                        }
+                    }
+                }
+            }
+
+            // Вариант 2: Groq API (быстрый, бесплатный, без регистрации для ограниченного использования)
+            // Или используем локальную логику как fallback
+            return this.generateTaskPlanFallback(taskDescription);
+            
+        } catch (error) {
+            console.error('Ошибка генерации плана с AI:', error);
+            return this.generateTaskPlanFallback(taskDescription);
+        }
+    }
+
+    generateTaskPlanFallback(taskDescription) {
+        // Умный fallback на основе ключевых слов
+        const desc = taskDescription.toLowerCase();
         let subTasks = [];
-        if (taskDescription.includes('экзамен') || taskDescription.includes('курсовая')) {
+
+        if (desc.includes('экзамен') || desc.includes('экзамену')) {
             subTasks = [
-                { id: Date.now() + 1, title: 'Собрать материалы', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 2, title: 'Написать план', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Изучить теорию', estimatedPomodoros: 4, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 4, title: 'Практика и примеры', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 5, title: 'Подвести итоги', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
+                { id: Date.now() + 1, title: 'Собрать материалы и конспекты', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 2, title: 'Составить план изучения', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 3, title: 'Изучить теорию и основные понятия', estimatedPomodoros: 4, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 4, title: 'Решить практические задачи', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 5, title: 'Повторить и закрепить материал', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
+            ];
+        } else if (desc.includes('курсовая') || desc.includes('курсовую') || desc.includes('курсовая работа')) {
+            subTasks = [
+                { id: Date.now() + 1, title: 'Выбрать тему и собрать источники', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 2, title: 'Составить план работы', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 3, title: 'Изучить литературу', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 4, title: 'Написать основную часть', estimatedPomodoros: 6, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 5, title: 'Оформить и проверить работу', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
+            ];
+        } else if (desc.includes('проект') || desc.includes('проекта')) {
+            subTasks = [
+                { id: Date.now() + 1, title: 'Планирование и анализ требований', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 2, title: 'Проектирование решения', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 3, title: 'Реализация основной функциональности', estimatedPomodoros: 5, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 4, title: 'Тестирование и отладка', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 5, title: 'Документация и финализация', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
+            ];
+        } else if (desc.includes('изуч') || desc.includes('учить') || desc.includes('обучен')) {
+            subTasks = [
+                { id: Date.now() + 1, title: 'Подготовить материалы для изучения', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 2, title: 'Изучить базовые концепции', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 3, title: 'Практические упражнения', estimatedPomodoros: 4, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 4, title: 'Повторение и закрепление', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
             ];
         } else {
             subTasks = [
-                { id: Date.now() + 1, title: 'Подготовка', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
+                { id: Date.now() + 1, title: 'Подготовка и планирование', estimatedPomodoros: 1, completed: false, completedPomodoros: 0 },
                 { id: Date.now() + 2, title: 'Основная работа', estimatedPomodoros: 3, completed: false, completedPomodoros: 0 },
-                { id: Date.now() + 3, title: 'Завершение', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
+                { id: Date.now() + 3, title: 'Проверка и завершение', estimatedPomodoros: 2, completed: false, completedPomodoros: 0 }
             ];
+        }
+
+        return subTasks;
+    }
+
+    async createTask(taskDescription, deadline = null, subTasks = null) {
+        let finalSubTasks = subTasks;
+        
+        if (!finalSubTasks) {
+            finalSubTasks = this.generateTaskPlanFallback(taskDescription);
         }
 
         let deadlineDate = undefined;
@@ -515,14 +373,14 @@ class FocusHelperApp {
                 deadlineDate = deadline;
             }
         }
-
+        
         const task = {
             id: Date.now().toString(),
             title: taskDescription,
             deadline: deadlineDate,
-            subTasks,
+            subTasks: finalSubTasks,
             createdAt: new Date().toISOString(),
-            totalPomodoros: subTasks.reduce((sum, st) => sum + st.estimatedPomodoros, 0),
+            totalPomodoros: finalSubTasks.reduce((sum, st) => sum + st.estimatedPomodoros, 0),
             completedPomodoros: 0
         };
 
@@ -548,24 +406,24 @@ class FocusHelperApp {
         if (!task || !task.subTasks || task.subTasks.length === 0) {
             return false;
         }
-
+        
         const currentIndex = task.subTasks.findIndex(st => Number(st.id) === Number(subTaskId));
         if (currentIndex === -1) {
             return false;
         }
-
+        
         const currentSubTask = task.subTasks[currentIndex];
-
+        
         if (this.isSubTaskCompleted(currentSubTask)) {
             return false;
         }
-
+        
         for (let i = 0; i < currentIndex; i++) {
             if (!this.isSubTaskCompleted(task.subTasks[i])) {
                 return false;
             }
         }
-
+        
         return true;
     }
 
@@ -574,29 +432,29 @@ class FocusHelperApp {
             console.error('startPomodoro: missing taskId or subTaskId', { taskId, subTaskId });
             return;
         }
-
+        
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) {
             console.error('startPomodoro: task not found', { taskId });
             return;
         }
-
+        
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) {
             console.error('startPomodoro: subTask not found', { subTaskId });
             return;
         }
-
+        
         if (this.isTaskCompleted(task)) {
             alert('Эта задача уже завершена! Все подзадачи выполнены.');
             return;
         }
-
+        
         if (this.isSubTaskCompleted(subTask)) {
             alert('Эта подзадача уже завершена! Все сессии Pomodoro выполнены.');
             return;
         }
-
+        
         if (!this.canStartPomodoroForSubTask(task, subTaskId)) {
             const firstIncomplete = task.subTasks.find(st => !this.isSubTaskCompleted(st));
             if (firstIncomplete) {
@@ -606,7 +464,7 @@ class FocusHelperApp {
             }
             return;
         }
-
+        
         this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId), focusText: focusText || '' };
         this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
         this.isRunning = false;
@@ -620,11 +478,14 @@ class FocusHelperApp {
         }
         this.isRunning = true;
         this.isPaused = false;
-
+        console.log('Таймер запущен, timeLeft:', this.timeLeft);
+        
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
+                console.log('Таймер тик, timeLeft:', this.timeLeft);
                 if (this.timeLeft <= 0) {
+                    console.log('Таймер завершен, вызываем completePomodoro');
                     clearInterval(this.timerInterval);
                     this.timerInterval = null;
                     this.completePomodoro();
@@ -644,18 +505,18 @@ class FocusHelperApp {
         if (this.currentView !== 'pomodoro' || !this.activeTask) {
             return;
         }
-
+        
         const minutes = Math.floor(this.timeLeft / 60);
         const seconds = this.timeLeft % 60;
         const timeText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-
+        
         const timerTextElements = document.querySelectorAll('.timer-text');
         timerTextElements.forEach(el => {
             if (el.textContent !== timeText) {
                 el.textContent = timeText;
             }
         });
-
+        
         const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
         const progress = totalTime > 0 ? Math.min(Math.max(((totalTime - this.timeLeft) / totalTime) * 100, 0), 100) : 0;
         const progressFillElements = document.querySelectorAll('.progress-fill');
@@ -670,6 +531,7 @@ class FocusHelperApp {
         if (this.activeTask?.focusText) {
             this.lastPomodoroFocus = this.activeTask.focusText;
             localStorage.setItem('lastPomodoroFocus', this.lastPomodoroFocus);
+            console.log('Saved last pomodoro focus:', this.lastPomodoroFocus);
         }
         clearInterval(this.timerInterval);
         this.timerInterval = null;
@@ -747,6 +609,7 @@ class FocusHelperApp {
     }
 
     completePomodoro() {
+        console.log('completePomodoro вызван');
         clearInterval(this.timerInterval);
         this.timerInterval = null;
         this.isRunning = false;
@@ -775,6 +638,15 @@ class FocusHelperApp {
         this.updateStreak();
         this.checkAndUnlockAchievements();
 
+        console.log('Статистика после завершения сессии:', {
+            totalSessions: this.stats.totalSessions,
+            totalFocusTime: this.stats.totalFocusTime,
+            xp: this.stats.xp,
+            level: this.stats.level,
+            currentStreak: this.stats.currentStreak,
+            longestStreak: this.stats.longestStreak
+        });
+
         this.saveStats(this.stats);
 
         if (this.activeTask?.taskId && this.activeTask?.subTaskId) {
@@ -794,22 +666,23 @@ class FocusHelperApp {
 
         this.activeTask = null;
         this.renderApp();
+        console.log('Показываем модальное окно завершения, xpGained:', xpGained, 'levelUp:', levelUp);
         this.showPomodoroCompleteModal(xpGained, levelUp);
-
+        
         this.syncWithBot();
     }
 
     updateStreak() {
         const today = new Date().toDateString();
         const lastSessionDate = localStorage.getItem('lastPomodoroDate');
-
+        
         if (this.stats.currentStreak === undefined || this.stats.currentStreak === null) {
             this.stats.currentStreak = 0;
         }
         if (this.stats.longestStreak === undefined || this.stats.longestStreak === null) {
             this.stats.longestStreak = 0;
         }
-
+        
         if (!lastSessionDate) {
             this.stats.currentStreak = 1;
             localStorage.setItem('lastPomodoroDate', today);
@@ -819,7 +692,7 @@ class FocusHelperApp {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
             const yesterdayString = yesterday.toDateString();
-
+            
             if (lastSessionDate === yesterdayString) {
                 this.stats.currentStreak = (this.stats.currentStreak || 0) + 1;
                 localStorage.setItem('lastPomodoroDate', today);
@@ -828,10 +701,17 @@ class FocusHelperApp {
                 localStorage.setItem('lastPomodoroDate', today);
             }
         }
-
+        
         if (this.stats.currentStreak > this.stats.longestStreak) {
             this.stats.longestStreak = this.stats.currentStreak;
         }
+        
+        console.log('Streak updated:', {
+            currentStreak: this.stats.currentStreak,
+            longestStreak: this.stats.longestStreak,
+            lastSessionDate: localStorage.getItem('lastPomodoroDate'),
+            today: today
+        });
     }
 
     getRandomExercise() {
@@ -853,13 +733,14 @@ class FocusHelperApp {
     }
 
     showPomodoroCompleteModal(xpGained, levelUp) {
+        console.log('showPomodoroCompleteModal вызван');
         const exercise = this.getRandomExercise();
-
+        
         const existingModal = document.querySelector('.pomodoro-complete-modal');
         if (existingModal) {
             existingModal.remove();
         }
-
+        
         const modal = document.createElement('div');
         modal.className = 'pomodoro-complete-modal';
         modal.style.cssText = `
@@ -930,6 +811,7 @@ class FocusHelperApp {
         document.body.appendChild(modal);
 
         const closeModal = () => {
+            console.log('Закрываем модальное окно');
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
@@ -945,9 +827,12 @@ class FocusHelperApp {
                 if (e.target === modal) closeModal();
             });
         }, 100);
+        
+        console.log('Модальное окно добавлено в DOM');
     }
 
     startQuickPomodoro() {
+        console.log('startQuickPomodoro called, activeTask exists:', !!this.activeTask);
         if (this.activeTask) {
             this.navigateTo('pomodoro');
         } else {
@@ -962,17 +847,36 @@ class FocusHelperApp {
         }
         const idStr = String(taskId);
         const beforeCount = this.tasks.length;
-
+        console.log('deleteTask before filter:', { taskId: idStr, tasks: this.tasks.map(t => ({ id: String(t.id), title: t.title })) });
+        
         const originalTasks = [...this.tasks];
-        this.tasks = this.tasks.filter(t => String(t.id) !== idStr);
-
+        this.tasks = this.tasks.filter(t => {
+            const taskIdStr = String(t.id);
+            const shouldKeep = taskIdStr !== idStr;
+            console.log('Filtering task:', { taskId: taskIdStr, shouldKeep, match: taskIdStr === idStr });
+            return shouldKeep;
+        });
+        
         const afterCount = this.tasks.length;
-
+        console.log('deleteTask after filter:', { 
+            taskId: idStr, 
+            beforeCount, 
+            afterCount, 
+            deleted: beforeCount > afterCount,
+            originalTasks: originalTasks.map(t => String(t.id)),
+            remainingTasks: this.tasks.map(t => String(t.id))
+        });
+        
         if (beforeCount === afterCount) {
+            console.error('deleteTask: Task was not deleted!', { 
+                taskId: idStr, 
+                allTaskIds: this.tasks.map(t => String(t.id)),
+                originalTaskIds: originalTasks.map(t => String(t.id))
+            });
             alert('Ошибка: задача не была удалена. Проверьте консоль для деталей.');
             return;
         }
-
+        
         this.saveTasks(this.tasks);
         this.syncWithBot();
         if (this.selectedTaskId === idStr) {
@@ -998,7 +902,7 @@ class FocusHelperApp {
             justify-content: center;
             z-index: 10000;
         `;
-
+        
         const modalContent = document.createElement('div');
         modalContent.className = 'confirm-modal-content';
         modalContent.style.cssText = `
@@ -1008,7 +912,7 @@ class FocusHelperApp {
             max-width: 400px;
             width: 90%;
         `;
-
+        
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">Удалить задачу?</h2>
             <p style="margin-bottom: 24px; color: #666;">Это действие нельзя отменить.</p>
@@ -1017,24 +921,25 @@ class FocusHelperApp {
                 <button class="btn secondary" id="cancelDeleteTask" style="flex: 1;">Отмена</button>
             </div>
         `;
-
+        
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-
+        
         const confirmBtn = document.getElementById('confirmDeleteTask');
         const cancelBtn = document.getElementById('cancelDeleteTask');
-
+        
         const closeModal = () => {
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
         };
-
+        
         confirmBtn.addEventListener('click', () => {
+            console.log('Calling deleteTask with:', taskId);
             this.deleteTask(taskId);
             closeModal();
         });
-
+        
         cancelBtn.addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
@@ -1056,7 +961,7 @@ class FocusHelperApp {
             justify-content: center;
             z-index: 10000;
         `;
-
+        
         const modalContent = document.createElement('div');
         modalContent.className = 'confirm-modal-content';
         modalContent.style.cssText = `
@@ -1066,7 +971,7 @@ class FocusHelperApp {
             max-width: 400px;
             width: 90%;
         `;
-
+        
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">Удалить действие из плана?</h2>
             <p style="margin-bottom: 24px; color: #666;">Это действие нельзя отменить.</p>
@@ -1075,24 +980,24 @@ class FocusHelperApp {
                 <button class="btn secondary" id="cancelDeleteSubTask" style="flex: 1;">Отмена</button>
             </div>
         `;
-
+        
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-
+        
         const confirmBtn = document.getElementById('confirmDeleteSubTask');
         const cancelBtn = document.getElementById('cancelDeleteSubTask');
-
+        
         const closeModal = () => {
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
         };
-
+        
         confirmBtn.addEventListener('click', () => {
             this.deleteSubTask(taskId, subTaskId);
             closeModal();
         });
-
+        
         cancelBtn.addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
@@ -1102,17 +1007,17 @@ class FocusHelperApp {
     deleteSubTask(taskId, subTaskId) {
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) return;
-
+        
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) return;
 
         const oldPomodoros = subTask.estimatedPomodoros;
         const oldCompleted = subTask.completedPomodoros;
         task.subTasks = task.subTasks.filter(st => Number(st.id) !== Number(subTaskId));
-
+        
         task.totalPomodoros = task.totalPomodoros - oldPomodoros;
         task.completedPomodoros = Math.max(0, task.completedPomodoros - oldCompleted);
-
+        
         this.saveTasks(this.tasks);
         this.syncWithBot();
         this.renderApp();
@@ -1133,7 +1038,7 @@ class FocusHelperApp {
             justify-content: center;
             z-index: 10000;
         `;
-
+        
         const modalContent = document.createElement('div');
         modalContent.className = 'focus-input-modal-content';
         modalContent.style.cssText = `
@@ -1143,7 +1048,7 @@ class FocusHelperApp {
             max-width: 400px;
             width: 90%;
         `;
-
+        
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">На что фокус?</h2>
             <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
@@ -1153,40 +1058,40 @@ class FocusHelperApp {
                 <button class="btn secondary" id="cancelQuickFocusInput" style="flex: 1;">Отмена</button>
             </div>
         `;
-
+        
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-
+        
         const focusInput = document.getElementById('focusInput');
         setTimeout(() => focusInput.focus(), 100);
-
+        
         const startBtn = document.getElementById('startQuickFocusPomodoro');
         const cancelBtn = document.getElementById('cancelQuickFocusInput');
-
+        
         const closeModal = () => {
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
         };
-
+        
         const startPomodoro = () => {
             const focusText = document.getElementById('focusInput').value.trim();
             if (!focusText) {
                 alert('Пожалуйста, введите задачу для фокуса');
                 return;
             }
-
+            
             this.lastPomodoroFocus = focusText;
             localStorage.setItem('lastPomodoroFocus', focusText);
             this.activeTask = { focusText: focusText };
             this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
             this.isRunning = false;
             this.isPaused = false;
-
+            
             closeModal();
             this.navigateTo('pomodoro');
         };
-
+        
         startBtn.addEventListener('click', startPomodoro);
         cancelBtn.addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
@@ -1209,7 +1114,7 @@ class FocusHelperApp {
             justify-content: center;
             z-index: 10000;
         `;
-
+        
         const modalContent = document.createElement('div');
         modalContent.className = 'focus-input-modal-content';
         modalContent.style.cssText = `
@@ -1219,7 +1124,7 @@ class FocusHelperApp {
             max-width: 400px;
             width: 90%;
         `;
-
+        
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">На что фокус?</h2>
             <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
@@ -1229,32 +1134,32 @@ class FocusHelperApp {
                 <button class="btn secondary" id="cancelFocusInput" style="flex: 1;">Отмена</button>
             </div>
         `;
-
+        
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-
+        
         const focusInput = document.getElementById('focusInput');
         setTimeout(() => focusInput.focus(), 100);
-
+        
         const startBtn = document.getElementById('startFocusPomodoro');
         const cancelBtn = document.getElementById('cancelFocusInput');
-
+        
         const closeModal = () => {
             if (document.body.contains(modal)) {
                 document.body.removeChild(modal);
             }
         };
-
+        
         const startPomodoro = () => {
             const focusText = document.getElementById('focusInput').value.trim();
             if (!focusText) {
                 alert('Пожалуйста, введите задачу для фокуса');
                 return;
             }
-
+            
             this.lastPomodoroFocus = focusText;
             localStorage.setItem('lastPomodoroFocus', focusText);
-
+            
             if (this.tasks.length > 0) {
                 const lastTask = this.tasks[this.tasks.length - 1];
                 if (lastTask && lastTask.subTasks.length > 0) {
@@ -1278,13 +1183,13 @@ class FocusHelperApp {
             }
             closeModal();
         };
-
+        
         startBtn.addEventListener('click', startPomodoro);
         cancelBtn.addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
         });
-
+        
         focusInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1296,7 +1201,7 @@ class FocusHelperApp {
     editSubTask(taskId, subTaskId) {
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) return;
-
+        
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) return;
 
@@ -1314,7 +1219,7 @@ class FocusHelperApp {
             justify-content: center;
             z-index: 10000;
         `;
-
+        
         const modalContent = document.createElement('div');
         modalContent.className = 'edit-modal-content';
         modalContent.style.cssText = `
@@ -1324,7 +1229,7 @@ class FocusHelperApp {
             max-width: 400px;
             width: 90%;
         `;
-
+        
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">Редактировать подзадачу</h2>
             <label style="display: block; margin-bottom: 8px; font-weight: 600;">Название:</label>
@@ -1336,53 +1241,53 @@ class FocusHelperApp {
                 <button class="btn secondary" id="cancelEditSubTask" style="flex: 1;">Отмена</button>
             </div>
         `;
-
+        
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-
+        
         const titleInput = document.getElementById('editSubTaskTitle');
         setTimeout(() => titleInput.focus(), 100);
-
+        
         const saveBtn = document.getElementById('saveEditSubTask');
         const cancelBtn = document.getElementById('cancelEditSubTask');
-
+        
         const closeModal = () => {
             document.body.removeChild(modal);
         };
-
+        
         const saveChanges = () => {
             const newTitle = document.getElementById('editSubTaskTitle').value.trim();
             const newPomodoros = parseInt(document.getElementById('editSubTaskPomodoros').value);
-
+            
             if (newTitle) {
                 subTask.title = newTitle;
             }
-
+            
             if (!isNaN(newPomodoros) && newPomodoros > 0) {
                 const oldPomodoros = subTask.estimatedPomodoros;
                 subTask.estimatedPomodoros = newPomodoros;
                 task.totalPomodoros = task.totalPomodoros - oldPomodoros + newPomodoros;
             }
-
+            
             this.saveTasks(this.tasks);
             this.syncWithBot();
             this.renderApp();
             closeModal();
         };
-
+        
         saveBtn.addEventListener('click', saveChanges);
         cancelBtn.addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
         });
-
+        
         titleInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 document.getElementById('editSubTaskPomodoros').focus();
             }
         });
-
+        
         document.getElementById('editSubTaskPomodoros').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1480,19 +1385,28 @@ class FocusHelperApp {
     renderCreateTask() {
         const today = new Date();
         const minDate = today.toISOString().split('T')[0];
-
+        
         return `
             <div class="app-container">
                 <div class="container">
                     <h1 class="title">Создать задачу</h1>
                     <div class="panel">
                         <label class="label">Опиши задачу</label>
-                        <textarea class="input text-area" id="taskDescription" placeholder="Например: Подготовиться к экзамену"></textarea>
+                        <textarea class="input text-area" id="taskDescription" placeholder="Например: Подготовиться к экзамену по математике"></textarea>
                         <label class="label">Дедлайн (опционально)</label>
                         <input type="date" class="input" id="deadline" min="${minDate}" style="font-size: 16px;">
-                        <button class="btn primary" data-action="analyzeTask">Разобрать с AI</button>
-                        <div id="generatedPlan"></div>
-                        <button class="btn primary" id="saveTask" style="display: none;" data-action="saveTask">Сохранить план</button>
+                        <button class="btn primary" id="analyzeTaskBtn" data-action="analyzeTask" style="margin-top: 16px;">
+                            <span id="analyzeTaskText">🤖 Разобрать с AI</span>
+                            <span id="analyzeTaskLoader" style="display: none;">⏳ Генерирую план...</span>
+                        </button>
+                        <div id="generatedPlan" style="margin-top: 16px;"></div>
+                        <button class="btn primary" id="saveTask" style="display: none; margin-top: 16px;" data-action="saveTask">Сохранить план</button>
+                    </div>
+                    <div class="panel" style="margin-top: 16px; padding: 16px; background: var(--background-secondary);">
+                        <div class="caption" style="opacity: 0.7;">
+                            💡 <strong>Совет:</strong> AI использует бесплатные открытые модели для генерации плана. 
+                            Для лучших результатов можно добавить API ключ Hugging Face в настройках.
+                        </div>
                     </div>
                 </div>
                 ${this.renderNavigation()}
@@ -1595,7 +1509,7 @@ class FocusHelperApp {
         if (!this.activeTask) return this.renderHome();
 
         const isQuickPomodoro = !this.activeTask.taskId || !this.activeTask.subTaskId;
-
+        
         let focusText = 'Фокус';
         if (isQuickPomodoro) {
             focusText = this.activeTask.focusText || 'Фокус';
@@ -1603,10 +1517,10 @@ class FocusHelperApp {
             const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
             const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
             focusText = this.activeTask.focusText || (subTask ? subTask.title : 'Фокус');
-
+            
             if (!task || !subTask) {
-                console.error('renderPomodoro: task or subTask not found', {
-                    taskId: this.activeTask.taskId,
+                console.error('renderPomodoro: task or subTask not found', { 
+                    taskId: this.activeTask.taskId, 
                     subTaskId: this.activeTask.subTaskId,
                     tasks: this.tasks.map(t => ({ id: t.id, title: t.title }))
                 });
@@ -1675,6 +1589,9 @@ class FocusHelperApp {
     }
 
     renderSettings() {
+        const hfApiKey = localStorage.getItem('hf_api_key') || '';
+        const hasApiKey = hfApiKey.length > 0;
+        
         return `
             <div class="app-container">
                 <div class="container">
@@ -1712,6 +1629,25 @@ class FocusHelperApp {
                         </div>
                     </div>
 
+                    <div class="panel">
+                        <div class="label">🤖 AI настройки (опционально)</div>
+                        <div class="caption" style="margin-bottom: 12px; opacity: 0.7;">
+                            Для улучшения качества генерации планов можно добавить бесплатный API ключ Hugging Face.
+                            <br><a href="https://huggingface.co/settings/tokens" target="_blank" style="color: var(--primary);">Получить ключ →</a>
+                        </div>
+                        <input type="password" 
+                               id="hfApiKeyInput" 
+                               class="input" 
+                               placeholder="${hasApiKey ? '••••••••••••' : 'Введите API ключ Hugging Face'}" 
+                               value="${hasApiKey ? '••••••••••••' : ''}"
+                               style="margin-bottom: 8px;">
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn secondary" data-action="saveApiKey" style="flex: 1;">💾 Сохранить ключ</button>
+                            ${hasApiKey ? `<button class="btn tertiary" data-action="removeApiKey" style="flex: 1;">🗑️ Удалить</button>` : ''}
+                        </div>
+                        ${hasApiKey ? '<div style="margin-top: 8px; color: var(--success); font-size: 14px;">✅ API ключ сохранен</div>' : ''}
+                    </div>
+
                     <button class="btn primary" data-action="saveSettings">💾 Сохранить настройки</button>
                 </div>
                 ${this.renderNavigation()}
@@ -1720,14 +1656,19 @@ class FocusHelperApp {
     }
 
     renderStatistics() {
+        console.log('renderStatistics called, current stats:', this.stats);
+        
         const savedStats = localStorage.getItem('focus_stats');
         if (savedStats) {
             try {
                 const parsed = JSON.parse(savedStats);
+                console.log('Loaded stats from localStorage:', parsed);
                 this.stats = { ...this.stats, ...parsed };
-            } catch (e) {}
+            } catch (e) {
+                console.error('Error parsing stats:', e);
+            }
         }
-
+        
         if (!this.stats) {
             this.stats = {
                 totalSessions: 0,
@@ -1739,43 +1680,112 @@ class FocusHelperApp {
                 achievements: []
             };
         }
-
+        
         if (!Array.isArray(this.stats.achievements)) {
             this.stats.achievements = [];
         }
-
+        
         this.stats.totalSessions = this.stats.totalSessions || 0;
         this.stats.totalFocusTime = this.stats.totalFocusTime || 0;
         this.stats.currentStreak = this.stats.currentStreak || 0;
         this.stats.longestStreak = this.stats.longestStreak || 0;
         this.stats.level = this.stats.level || 1;
         this.stats.xp = this.stats.xp || 0;
-
+        
         this.checkAndUnlockAchievements();
-
+        
+        console.log('Using stats for render:', this.stats);
+        
         const hours = Math.floor(this.stats.totalFocusTime / 60);
         const minutes = this.stats.totalFocusTime % 60;
         const levelProgress = this.stats.xp % 100;
 
         const hasAchievement = (id) => {
-            return Array.isArray(this.stats.achievements) &&
+            return Array.isArray(this.stats.achievements) && 
                 this.stats.achievements.some(a => a && a.id === id);
         };
 
         const allAchievements = [
-            { id: 'first_steps', title: 'Первые шаги', icon: '🎯', description: 'Заверши первую сессию', unlockLevel: 1 },
-            { id: 'level_2', title: 'Новичок', icon: '⭐', description: 'Достигни 2 уровня', unlockLevel: 2 },
-            { id: 'level_3', title: 'Опытный', icon: '🌟', description: 'Достигни 3 уровня', unlockLevel: 3 },
-            { id: 'level_5', title: 'Профессионал', icon: '💪', description: 'Достигни 5 уровня', unlockLevel: 5 },
-            { id: 'level_10', title: 'Мастер', icon: '👑', description: 'Достигни 10 уровня', unlockLevel: 10 },
-            { id: 'marathon', title: 'Марафонец', icon: '🏃', description: '10 часов фокуса', unlockLevel: 3, checkCondition: () => this.stats.totalFocusTime >= 600 },
-            { id: 'dedication', title: 'Преданность', icon: '🔥', description: '50 завершенных сессий', unlockLevel: 4, checkCondition: () => this.stats.totalSessions >= 50 },
-            { id: 'streak_7', title: 'Неделя силы', icon: '📅', description: '7 дней подряд', unlockLevel: 2, checkCondition: () => this.stats.currentStreak >= 7 },
-            { id: 'streak_30', title: 'Месяц дисциплины', icon: '🗓️', description: '30 дней подряд', unlockLevel: 6, checkCondition: () => this.stats.currentStreak >= 30 },
-            { id: 'legend', title: 'Легенда', icon: '🏆', description: '100 часов фокуса', unlockLevel: 8, checkCondition: () => this.stats.totalFocusTime >= 6000 }
+            { 
+                id: 'first_steps', 
+                title: 'Первые шаги', 
+                icon: '🎯',
+                description: 'Заверши первую сессию',
+                unlockLevel: 1
+            },
+            { 
+                id: 'level_2', 
+                title: 'Новичок', 
+                icon: '⭐',
+                description: 'Достигни 2 уровня',
+                unlockLevel: 2
+            },
+            { 
+                id: 'level_3', 
+                title: 'Опытный', 
+                icon: '🌟',
+                description: 'Достигни 3 уровня',
+                unlockLevel: 3
+            },
+            { 
+                id: 'level_5', 
+                title: 'Профессионал', 
+                icon: '💪',
+                description: 'Достигни 5 уровня',
+                unlockLevel: 5
+            },
+            { 
+                id: 'level_10', 
+                title: 'Мастер', 
+                icon: '👑',
+                description: 'Достигни 10 уровня',
+                unlockLevel: 10
+            },
+            { 
+                id: 'marathon', 
+                title: 'Марафонец', 
+                icon: '🏃',
+                description: '10 часов фокуса',
+                unlockLevel: 3,
+                checkCondition: () => this.stats.totalFocusTime >= 600
+            },
+            { 
+                id: 'dedication', 
+                title: 'Преданность', 
+                icon: '🔥',
+                description: '50 завершенных сессий',
+                unlockLevel: 4,
+                checkCondition: () => this.stats.totalSessions >= 50
+            },
+            { 
+                id: 'streak_7', 
+                title: 'Неделя силы', 
+                icon: '📅',
+                description: '7 дней подряд',
+                unlockLevel: 2,
+                checkCondition: () => this.stats.currentStreak >= 7
+            },
+            { 
+                id: 'streak_30', 
+                title: 'Месяц дисциплины', 
+                icon: '🗓️',
+                description: '30 дней подряд',
+                unlockLevel: 6,
+                checkCondition: () => this.stats.currentStreak >= 30
+            },
+            { 
+                id: 'legend', 
+                title: 'Легенда', 
+                icon: '🏆',
+                description: '100 часов фокуса',
+                unlockLevel: 8,
+                checkCondition: () => this.stats.totalFocusTime >= 6000
+            }
         ];
 
-        const availableAchievements = allAchievements.filter(ach => this.stats.level >= ach.unlockLevel);
+        const availableAchievements = allAchievements.filter(ach => 
+            this.stats.level >= ach.unlockLevel
+        );
 
         const achievements = availableAchievements
             .filter(ach => hasAchievement(ach.id))
@@ -1806,7 +1816,7 @@ class FocusHelperApp {
                 </div>
             </div>
         `).join('');
-
+        
         const levelLockedAchievements = allAchievements
             .filter(ach => this.stats.level < ach.unlockLevel)
             .slice(0, 3)
@@ -1818,7 +1828,7 @@ class FocusHelperApp {
                         <div class="task-item-title" style="opacity: 0.4;">${ach.title}</div>
                         <div class="task-item-meta" style="opacity: 0.3;">Откроется на уровне ${ach.unlockLevel}</div>
                     </div>
-                    <span style="color: var(--text-terтиary); font-size: 16px;">🔒</span>
+                    <span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>
                 </div>
             </div>
         `).join('');
@@ -1891,7 +1901,7 @@ class FocusHelperApp {
                 content = this.renderCreateTask();
                 break;
             case 'taskDetails':
-                const taskId = this.selectedTaskId || '';
+                const taskId = this.selectedTaskId || ''; 
                 content = this.renderTaskDetails(taskId);
                 break;
             case 'pomodoro':
@@ -1940,19 +1950,19 @@ class FocusHelperApp {
         if (this.clickHandler) {
             document.removeEventListener('click', this.clickHandler);
         }
-
-        this.clickHandler = (e) => {
+        
+        this.clickHandler = async (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
                 return;
             }
-
+            
             if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal') || e.target.closest('.confirm-modal')) {
                 return;
             }
-
+            
             let actionElement = null;
             let current = e.target;
-
+            
             while (current && current !== document.body) {
                 if (current.hasAttribute && current.hasAttribute('data-action')) {
                     actionElement = current;
@@ -1964,15 +1974,17 @@ class FocusHelperApp {
                 }
                 current = current.parentElement;
             }
-
+            
             if (!actionElement) {
                 return;
             }
-
+            
             const action = actionElement.getAttribute('data-action') || actionElement.dataset.action;
             if (!action) {
                 return;
             }
+
+            console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target, 'has data-view:', actionElement.hasAttribute('data-view'), 'dataset.view:', actionElement.dataset.view);
 
             e.stopPropagation();
 
@@ -1982,7 +1994,16 @@ class FocusHelperApp {
 
             if (action === 'navigate') {
                 const view = actionElement.getAttribute('data-view') || actionElement.dataset.view;
-                if (view) this.navigateTo(view);
+                console.log('navigate clicked:', view, 'element:', actionElement);
+                if (view) {
+                    console.log('Navigating to:', view);
+                    this.navigateTo(view);
+                } else {
+                    console.error('navigate: view is missing', {
+                        actionElement,
+                        allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
+                    });
+                }
             } else if (action === 'setDailyHours') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.dailyHours = parseInt(value);
@@ -2003,89 +2024,127 @@ class FocusHelperApp {
                 const pomodoroLength = parseInt(document.getElementById('pomodoroLength')?.value) || this.settings.pomodoroLength;
                 const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
                 const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
-
+                
                 this.settings.pomodoroLength = pomodoroLength;
                 this.settings.dailyHours = dailyHours;
                 this.settings.breakLength = breakLength;
-
+                
                 this.saveSettings(this.settings);
                 alert('✅ Настройки сохранены!');
                 this.navigateTo('home');
+            } else if (action === 'saveApiKey') {
+                const apiKeyInput = document.getElementById('hfApiKeyInput');
+                const apiKey = apiKeyInput?.value?.trim();
+                if (apiKey && apiKey !== '••••••••••••') {
+                    localStorage.setItem('hf_api_key', apiKey);
+                    alert('✅ API ключ сохранен!');
+                    this.renderApp();
+                } else {
+                    alert('⚠️ Введите валидный API ключ');
+                }
+            } else if (action === 'removeApiKey') {
+                if (confirm('Удалить сохраненный API ключ?')) {
+                    localStorage.removeItem('hf_api_key');
+                    alert('✅ API ключ удален');
+                    this.renderApp();
+                }
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
             } else if (action === 'createTask') {
                 this.navigateTo('createTask');
             } else if (action === 'analyzeTask') {
                 const desc = document.getElementById('taskDescription')?.value?.trim();
-                const deadlineInput = document.getElementById('deadline');
-                const dl = deadlineInput?.value || null;
-
                 if (!desc) {
-                    alert('Опиши задачу');
+                    alert('Пожалуйста, опишите задачу');
                     return;
                 }
-
-                const generatedDiv = document.getElementById('generatedPlan');
-                if (generatedDiv) {
-                    generatedDiv.innerHTML = `<p class="caption">ИИ генерирует план… ⏳</p>`;
-                }
-
-                (async () => {
-                    try {
-                        // 1) Генерация плана ИИ
-                        const plan = await this.aiDecomposeTask(desc);
-
-                        // 2) Создание задачи (как раньше)
-                        await this.createTask(desc, dl);
-
-                        // 3) Подмена подзадач на ИИ-план
-                        const t = this.tasks[this.tasks.length - 1];
-                        const subTasks = (plan.subtasks || []).map((st, i) => ({
-                            id: Date.now() + i + 1,
-                            title: st.title,
-                            estimatedPomodoros: st.estimatedPomodoros,
-                            completed: false,
-                            completedPomodoros: 0
-                        }));
-                        t.subTasks = subTasks;
-                        t.totalPomodoros = subTasks.reduce((s, x) => s + x.estimatedPomodoros, 0);
-                        this.saveTasks(this.tasks);
-                        await this.syncWithBot();
-
-                        // 4) Превью плана (по желанию)
-                        if (generatedDiv) {
-                            generatedDiv.innerHTML = `
-                                <div class="panel" style="margin-top:12px">
-                                  <div class="label">Предложенный план</div>
-                                  <div class="task-list">
+                
+                const analyzeBtn = document.getElementById('analyzeTaskBtn');
+                const analyzeText = document.getElementById('analyzeTaskText');
+                const analyzeLoader = document.getElementById('analyzeTaskLoader');
+                const planDiv = document.getElementById('generatedPlan');
+                const saveBtn = document.getElementById('saveTask');
+                
+                // Показываем загрузку
+                if (analyzeBtn) analyzeBtn.disabled = true;
+                if (analyzeText) analyzeText.style.display = 'none';
+                if (analyzeLoader) analyzeLoader.style.display = 'inline';
+                if (planDiv) planDiv.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-secondary);">⏳ Генерирую план с помощью AI...</div>';
+                
+                try {
+                    // Генерируем план с помощью AI
+                    const subTasks = await this.generateTaskPlanWithAI(desc);
+                    
+                    // Показываем сгенерированный план
+                    if (planDiv) {
+                        planDiv.innerHTML = `
+                            <div style="margin-top: 16px;">
+                                <h3 class="subtitle" style="margin-bottom: 12px;">🤖 Сгенерированный план:</h3>
+                                <div class="task-list">
                                     ${subTasks.map((st, idx) => `
-                                      <div class="task-item">
-                                        <div class="task-item-header">
-                                          <div class="task-item-number">${idx+1}</div>
-                                          <div class="task-item-content">
-                                            <div class="task-item-title">${st.title}</div>
-                                            <div class="task-item-meta">🍅 ${st.estimatedPomodoros} сессий</div>
-                                          </div>
+                                        <div class="task-item">
+                                            <div class="flex center">
+                                                <div class="task-item-number">${idx + 1}</div>
+                                                <div class="task-item-content" style="flex: 1;">
+                                                    <div class="task-item-title">${st.title}</div>
+                                                    <div class="task-item-meta">🍅 ${st.estimatedPomodoros} сессий Pomodoro</div>
+                                                </div>
+                                            </div>
                                         </div>
-                                      </div>
                                     `).join('')}
-                                  </div>
-                                </div>`;
-                        }
-
-                        this.selectedTaskId = t.id;
-                        this.navigateTo('taskDetails');
-                    } catch (err) {
-                        console.error(err);
-                        if (generatedDiv) {
-                            generatedDiv.innerHTML = `<p class="caption" style="color:var(--error)">Не удалось сгенерировать план: ${err.message || err}</p>`;
-                        } else {
-                            alert('Не удалось сгенерировать план. Попробуй снова или укороти описание.');
-                        }
+                                </div>
+                            </div>
+                        `;
                     }
-                })();
+                    
+                    // Сохраняем план для последующего использования
+                    this.pendingTaskPlan = {
+                        description: desc,
+                        deadline: document.getElementById('deadline')?.value || null,
+                        subTasks: subTasks
+                    };
+                    
+                    if (saveBtn) saveBtn.style.display = 'block';
+                    
+                } catch (error) {
+                    console.error('Ошибка генерации плана:', error);
+                    if (planDiv) {
+                        planDiv.innerHTML = `
+                            <div style="padding: 16px; background: var(--error-light); border-radius: 8px; color: var(--error);">
+                                ⚠️ Ошибка генерации плана. Используется базовый план.
+                            </div>
+                        `;
+                    }
+                    // Используем fallback
+                    const fallbackSubTasks = this.generateTaskPlanFallback(desc);
+                    this.pendingTaskPlan = {
+                        description: desc,
+                        deadline: document.getElementById('deadline')?.value || null,
+                        subTasks: fallbackSubTasks
+                    };
+                    if (saveBtn) saveBtn.style.display = 'block';
+                } finally {
+                    // Убираем загрузку
+                    if (analyzeBtn) analyzeBtn.disabled = false;
+                    if (analyzeText) analyzeText.style.display = 'inline';
+                    if (analyzeLoader) analyzeLoader.style.display = 'none';
+                }
             } else if (action === 'saveTask') {
-                this.navigateTo('home');
+                if (this.pendingTaskPlan) {
+                    await this.createTask(
+                        this.pendingTaskPlan.description,
+                        this.pendingTaskPlan.deadline,
+                        this.pendingTaskPlan.subTasks
+                    );
+                    this.pendingTaskPlan = null;
+                } else {
+                    // Fallback: создаем задачу без AI плана
+                    const desc = document.getElementById('taskDescription')?.value?.trim();
+                    const deadline = document.getElementById('deadline')?.value || null;
+                    if (desc) {
+                        await this.createTask(desc, deadline);
+                    }
+                }
             } else if (action === 'viewTask') {
                 const taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
                 if (taskId) {
@@ -2094,7 +2153,7 @@ class FocusHelperApp {
                 }
             } else if (action === 'deleteTask') {
                 let taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
-
+                
                 if (!taskId) {
                     let current = actionElement;
                     for (let i = 0; i < 5 && current; i++) {
@@ -2109,11 +2168,21 @@ class FocusHelperApp {
                         current = current.parentElement;
                     }
                 }
-
+                
+                console.log('deleteTask clicked:', {
+                    taskId,
+                    actionElement,
+                    target: e.target
+                });
+                
                 if (taskId) {
                     this.showDeleteTaskConfirm(taskId);
                 } else {
-                    alert('Ошибка: не удалось найти ID задачи для удаления.');
+                    console.error('deleteTask: taskId not found', {
+                        actionElement,
+                        allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
+                    });
+                    alert('Ошибка: не удалось найти ID задачи для удаления. Проверьте консоль.');
                 }
             } else if (action === 'startPomodoro') {
                 const taskId = actionElement.getAttribute('data-task') || actionElement.dataset.task;
@@ -2143,7 +2212,7 @@ class FocusHelperApp {
                     this.showDeleteSubTaskConfirm(taskId, subTaskId);
                 }
             }
-
+            
             if (e.target.classList.contains('editable-title') && e.target.dataset.subtaskId) {
                 const taskItem = e.target.closest('.task-item');
                 if (taskItem) {
@@ -2155,11 +2224,12 @@ class FocusHelperApp {
                 }
             }
         };
-
+        
         document.addEventListener('click', this.clickHandler);
     }
 
-    attachDynamicEventListeners() {}
+    attachDynamicEventListeners() {
+    }
 }
 
 const app = new FocusHelperApp();
