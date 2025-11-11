@@ -40,38 +40,92 @@ class FocusHelperApp {
     }
 
     // ---------- LLM ----------
-    async waitForWebLLM(maxWait = 10000) {
-        const startTime = Date.now();
-        // Проверяем различные возможные имена в window
+    async waitForWebLLM() {
+        // Метод 1: Пробуем динамический импорт как ES модуль (основной метод для ES modules)
+        const cdnUrls = [
+            'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@latest/dist/index.js',
+            'https://unpkg.com/@mlc-ai/web-llm@latest/dist/index.js',
+            'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/index.js'
+        ];
+        
+        for (const url of cdnUrls) {
+            try {
+                console.log(`Пробуем загрузить WebLLM из ${url}...`);
+                const webllmModule = await import(url);
+                
+                // Проверяем различные варианты экспорта
+                let api = null;
+                if (webllmModule.default) {
+                    api = webllmModule.default;
+                } else if (webllmModule.CreateWebWorkerEngine || webllmModule.CreateMLCEngine) {
+                    api = webllmModule;
+                } else if (webllmModule.webllm) {
+                    api = webllmModule.webllm;
+                }
+                
+                // Проверяем, что API содержит нужные методы
+                if (api && (typeof api.CreateWebWorkerEngine === 'function' || typeof api.CreateMLCEngine === 'function')) {
+                    console.log(`✅ WebLLM успешно загружен из ${url}`);
+                    // Кэшируем в window для возможного использования в других местах
+                    window.webllm = api;
+                    return api;
+                } else if (api) {
+                    console.warn(`Загружен модуль из ${url}, но API не содержит ожидаемых методов. Ключи:`, Object.keys(api).slice(0, 10));
+                }
+            } catch (importError) {
+                console.warn(`Не удалось загрузить WebLLM из ${url}:`, importError.message);
+                // Продолжаем пробовать другие URLs
+            }
+        }
+        
+        // Метод 2: Проверяем глобальную переменную (на случай, если скрипт загружен через <script>)
         const checkWebLLM = () => {
-            // Проверяем window.webllm, window.WebLLM и другие варианты
-            if (window.webllm) return window.webllm;
-            if (window.WebLLM) return window.WebLLM;
-            // Проверяем через hasOwnProperty для безопасности
-            if (window.hasOwnProperty('webllm') && window.webllm) return window.webllm;
+            if (window.webllm && (typeof window.webllm.CreateWebWorkerEngine === 'function' || typeof window.webllm.CreateMLCEngine === 'function')) {
+                return window.webllm;
+            }
+            if (window.WebLLM && (typeof window.WebLLM.CreateWebWorkerEngine === 'function' || typeof window.WebLLM.CreateMLCEngine === 'function')) {
+                return window.WebLLM;
+            }
             return null;
         };
         
         let webllm = checkWebLLM();
-        while (!webllm && (Date.now() - startTime) < maxWait) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            webllm = checkWebLLM();
+        if (webllm) {
+            console.log('✅ WebLLM найден как глобальная переменная');
+            return webllm;
         }
         
-        if (!webllm) {
-            console.warn('WebLLM не найден после ожидания. Проверьте загрузку скрипта из CDN.');
-            // Полезная отладочная информация
-            const relevantKeys = Object.keys(window).filter(k => 
-                k.toLowerCase().includes('llm') || 
-                k.toLowerCase().includes('web') ||
-                k.toLowerCase().includes('mlc')
-            );
-            if (relevantKeys.length > 0) {
-                console.warn('Найденные связанные глобальные переменные:', relevantKeys);
+        // Метод 3: Ищем в других глобальных переменных
+        console.log('Ищем WebLLM в глобальных переменных...');
+        const relevantKeys = Object.keys(window).filter(k => 
+            (k.toLowerCase().includes('llm') || k.toLowerCase().includes('mlc')) &&
+            k !== 'webllm' && k !== 'WebLLM'
+        );
+        
+        for (const key of relevantKeys) {
+            try {
+                const obj = window[key];
+                if (obj && typeof obj === 'object') {
+                    if (typeof obj.CreateWebWorkerEngine === 'function' || 
+                        typeof obj.CreateMLCEngine === 'function') {
+                        console.log(`✅ Найден WebLLM API в window.${key}`);
+                        window.webllm = obj;
+                        return obj;
+                    }
+                }
+            } catch (e) {
+                // Игнорируем ошибки доступа
             }
         }
         
-        return webllm;
+        console.error('❌ WebLLM не найден ни одним из методов.');
+        console.error('Проверьте:');
+        console.error('1. Доступность CDN (jsdelivr.net или unpkg.com)');
+        console.error('2. Наличие ошибок CORS в консоли');
+        console.error('3. Поддержку WebGPU в браузере');
+        console.error('4. Что модуль @mlc-ai/web-llm доступен на npm');
+        
+        return null;
     }
 
     async initLLM() {
