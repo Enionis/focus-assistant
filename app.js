@@ -42,36 +42,44 @@ class FocusHelperApp {
     // ---------- LLM ----------
     async initLLM() {
         try {
-            const hasWebGPU = !!navigator.gpu;
-            if (!hasWebGPU) {
-                console.warn('WebGPU недоступен — локальная LLM не запустится. Открой в Chrome/Edge/Safari на десктопе.');
-                return null;
-            }
-
-            const model = "Llama-3.2-3B-Instruct-q4f32_1-MLC"; // можно заменить на Qwen2.5-3B и т.п.
-
-            // Инициализация в воркере (не блокирует UI)
-            this.llm = await webllm.CreateWebWorkerEngine(
-                new URL(
-                    "https://unpkg.com/@mlc-ai/web-llm/dist/worker.js",
-                    (typeof import !== 'undefined' && import.meta && import.meta.url) ? import.meta.url : window.location
-                ),
-                {
-                    model,
-                    useWebWorker: true,
-                    initProgressCallback: (p) => {
-                        // Можно вывести прогресс в интерфейс при желании
-                        // console.log('LLM load:', p);
-                    }
-                }
-            );
-            console.log('✅ LLM готова:', model);
-            return this.llm;
-        } catch (e) {
-            console.error('Ошибка инициализации LLM:', e);
+          const hasWebGPU = !!(navigator.gpu);
+          if (!hasWebGPU) {
+            console.warn('WebGPU недоступен — локальная LLM не запустится. Открой в десктопном Chrome/Edge/Safari.');
             return null;
+          }
+      
+          // 1) пробуем module Worker с CDN jsDelivr
+          const workerUrl = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/dist/worker.js";
+          let engine = null;
+      
+          try {
+            const worker = new Worker(workerUrl, { type: "module" });
+            engine = await webllm.CreateWebWorkerEngine(worker, {
+              model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
+              initProgressCallback: (p) => {
+                // сюда можно прокинуть прогресс загрузки (p.progress, p.text)
+                // console.log('LLM load:', p);
+              }
+            });
+          } catch (e) {
+            console.warn("Module Worker не удалось создать, пробуем без воркера:", e);
+            // 2) fallback: без воркера (в том же потоке). Работает медленнее, но без CORS/Proxy-танцев.
+            engine = await webllm.CreateMLCEngine({
+              model: "Llama-3.2-3B-Instruct-q4f32_1-MLC",
+              initProgressCallback: (p) => {
+                // console.log('LLM load (no-worker):', p);
+              }
+            });
+          }
+      
+          this.llm = engine;
+          console.log('✅ LLM готова');
+          return engine;
+        } catch (e) {
+          console.error('Ошибка инициализации LLM:', e);
+          return null;
         }
-    }
+      }      
 
     async aiDecomposeTask(description) {
         await this.llmReady;
