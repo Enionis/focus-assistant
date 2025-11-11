@@ -1,10 +1,13 @@
+// app.js
 class FocusHelperApp {
     constructor() {
         this.currentView = 'onboarding';
         this.userData = null;
         this.eventListenersAttached = false;
-        this.apiBaseUrl = 'https://focus-assistant-railway-production.up.railway.app'; 
-        this.initUserData(); 
+
+        // URL твоего Railway-бэкенда
+        this.apiBaseUrl = 'https://focus-assistant-railway-production.up.railway.app';
+
         this.timerInterval = null;
         this.timeLeft = 30;
         this.isRunning = false;
@@ -12,6 +15,7 @@ class FocusHelperApp {
         this.activeTask = null;
         this.selectedTaskId = null;
         this.lastPomodoroFocus = null;
+
         this.settings = {
             dailyHours: 4,
             productiveTime: 'morning',
@@ -29,6 +33,10 @@ class FocusHelperApp {
             xp: 0,
             achievements: []
         };
+
+        this.draftTask = null; // NEW — временный черновик задачи после AI-анализа
+
+        this.initUserData();
         this.init();
     }
 
@@ -60,7 +68,7 @@ class FocusHelperApp {
             console.error('❌ localStorage недоступен! Данные не будут сохраняться.');
             alert('⚠️ Внимание: localStorage недоступен. Статистика не будет сохраняться после закрытия браузера.\n\nВозможные причины:\n- Режим инкогнито\n- Браузер заблокировал хранилище\n- Недостаточно места');
         }
-        
+
         this.loadData();
         this.lastPomodoroFocus = localStorage.getItem('lastPomodoroFocus') || null;
         this.attachEventListeners();
@@ -104,7 +112,6 @@ class FocusHelperApp {
                     achievements: []
                 };
             }
-            
             if (!Array.isArray(this.stats.achievements)) {
                 this.stats.achievements = [];
             }
@@ -113,11 +120,7 @@ class FocusHelperApp {
                 await this.syncWithBot();
             }
 
-            if (!this.settings.isOnboarded) {
-                this.currentView = 'onboarding';
-            } else {
-                this.currentView = 'home';
-            }
+            this.currentView = this.settings.isOnboarded ? 'home' : 'onboarding';
         } catch (error) {
             console.error('Ошибка загрузки данных:', error);
             if (!this.stats || typeof this.stats !== 'object') {
@@ -152,9 +155,7 @@ class FocusHelperApp {
         try {
             localStorage.setItem('focus_stats', JSON.stringify(newStats));
             const saved = localStorage.getItem('focus_stats');
-            if (!saved) {
-                console.warn('⚠️ Не удалось сохранить статистику в localStorage');
-            }
+            if (!saved) console.warn('⚠️ Не удалось сохранить статистику в localStorage');
         } catch (error) {
             console.error('❌ Ошибка сохранения статистики:', error);
             if (error.name === 'QuotaExceededError') {
@@ -171,24 +172,19 @@ class FocusHelperApp {
 
     async syncWithBot() {
         let userId = this.userData?.userId;
-        
+
         if (!userId && typeof window !== 'undefined' && window.MaxWebApp) {
             try {
                 const maxWebApp = window.MaxWebApp;
-                if (maxWebApp.user?.id) {
-                    userId = maxWebApp.user.id;
-                } else if (maxWebApp.user?.user_id) {
-                    userId = maxWebApp.user.user_id;
-                } else if (maxWebApp.initData?.user?.id) {
-                    userId = maxWebApp.initData.user.id;
-                } else if (maxWebApp.initData?.user?.user_id) {
-                    userId = maxWebApp.initData.user.user_id;
-                }
+                if (maxWebApp.user?.id) userId = maxWebApp.user.id;
+                else if (maxWebApp.user?.user_id) userId = maxWebApp.user.user_id;
+                else if (maxWebApp.initData?.user?.id) userId = maxWebApp.initData.user.id;
+                else if (maxWebApp.initData?.user?.user_id) userId = maxWebApp.initData.user.user_id;
             } catch (e) {
                 console.warn('Не удалось получить userId из Max Web App SDK:', e);
             }
         }
-        
+
         if (!userId) {
             console.log('ℹ️ Данные хранятся только локально (localStorage). userId не найден.');
             return;
@@ -199,7 +195,7 @@ class FocusHelperApp {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    userId: userId,
+                    userId,
                     settings: this.settings,
                     tasks: this.tasks,
                     stats: this.stats
@@ -254,16 +250,12 @@ class FocusHelperApp {
         if (deadline) {
             if (typeof deadline === 'string' && deadline.trim()) {
                 const date = new Date(deadline);
-                if (!isNaN(date.getTime())) {
-                    deadlineDate = date.toISOString();
-                } else {
-                    deadlineDate = deadline;
-                }
+                deadlineDate = isNaN(date.getTime()) ? deadline : date.toISOString();
             } else {
                 deadlineDate = deadline;
             }
         }
-        
+
         const task = {
             id: Date.now().toString(),
             title: taskDescription,
@@ -284,36 +276,19 @@ class FocusHelperApp {
     isSubTaskCompleted(subTask) {
         return subTask.completedPomodoros >= subTask.estimatedPomodoros;
     }
-
     isTaskCompleted(task) {
-        if (!task || !task.subTasks || task.subTasks.length === 0) {
-            return false;
-        }
+        if (!task || !task.subTasks || task.subTasks.length === 0) return false;
         return task.subTasks.every(st => this.isSubTaskCompleted(st));
     }
-
     canStartPomodoroForSubTask(task, subTaskId) {
-        if (!task || !task.subTasks || task.subTasks.length === 0) {
-            return false;
-        }
-        
+        if (!task || !task.subTasks || task.subTasks.length === 0) return false;
         const currentIndex = task.subTasks.findIndex(st => Number(st.id) === Number(subTaskId));
-        if (currentIndex === -1) {
-            return false;
-        }
-        
+        if (currentIndex === -1) return false;
         const currentSubTask = task.subTasks[currentIndex];
-        
-        if (this.isSubTaskCompleted(currentSubTask)) {
-            return false;
-        }
-        
+        if (this.isSubTaskCompleted(currentSubTask)) return false;
         for (let i = 0; i < currentIndex; i++) {
-            if (!this.isSubTaskCompleted(task.subTasks[i])) {
-                return false;
-            }
+            if (!this.isSubTaskCompleted(task.subTasks[i])) return false;
         }
-        
         return true;
     }
 
@@ -322,39 +297,31 @@ class FocusHelperApp {
             console.error('startPomodoro: missing taskId or subTaskId', { taskId, subTaskId });
             return;
         }
-        
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) {
             console.error('startPomodoro: task not found', { taskId });
             return;
         }
-        
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) {
             console.error('startPomodoro: subTask not found', { subTaskId });
             return;
         }
-        
         if (this.isTaskCompleted(task)) {
             alert('Эта задача уже завершена! Все подзадачи выполнены.');
             return;
         }
-        
         if (this.isSubTaskCompleted(subTask)) {
             alert('Эта подзадача уже завершена! Все сессии Pomodoro выполнены.');
             return;
         }
-        
         if (!this.canStartPomodoroForSubTask(task, subTaskId)) {
             const firstIncomplete = task.subTasks.find(st => !this.isSubTaskCompleted(st));
-            if (firstIncomplete) {
-                alert(`Сначала завершите предыдущие подзадачи! Начните с подзадачи "${firstIncomplete.title}"`);
-            } else {
-                alert('Все подзадачи уже завершены!');
-            }
+            if (firstIncomplete) alert(`Сначала завершите предыдущие подзадачи! Начните с подзадачи "${firstIncomplete.title}"`);
+            else alert('Все подзадачи уже завершены!');
             return;
         }
-        
+
         this.activeTask = { taskId: String(taskId), subTaskId: Number(subTaskId), focusText: focusText || '' };
         this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
         this.isRunning = false;
@@ -363,19 +330,15 @@ class FocusHelperApp {
     }
 
     startTimer() {
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
-        }
+        if (this.timerInterval) clearInterval(this.timerInterval);
         this.isRunning = true;
         this.isPaused = false;
         console.log('Таймер запущен, timeLeft:', this.timeLeft);
-        
+
         this.timerInterval = setInterval(() => {
             if (this.isRunning && !this.isPaused) {
                 this.timeLeft--;
-                console.log('Таймер тик, timeLeft:', this.timeLeft);
                 if (this.timeLeft <= 0) {
-                    console.log('Таймер завершен, вызываем completePomodoro');
                     clearInterval(this.timerInterval);
                     this.timerInterval = null;
                     this.completePomodoro();
@@ -387,41 +350,25 @@ class FocusHelperApp {
         this.renderApp();
     }
 
-    pausePomodoro() {
-        this.isPaused = !this.isPaused;
-    }
+    pausePomodoro() { this.isPaused = !this.isPaused; }
 
     updateTimerDisplay() {
-        if (this.currentView !== 'pomodoro' || !this.activeTask) {
-            return;
-        }
-        
+        if (this.currentView !== 'pomodoro' || !this.activeTask) return;
         const minutes = Math.floor(this.timeLeft / 60);
         const seconds = this.timeLeft % 60;
         const timeText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        
         const timerTextElements = document.querySelectorAll('.timer-text');
-        timerTextElements.forEach(el => {
-            if (el.textContent !== timeText) {
-                el.textContent = timeText;
-            }
-        });
-        
+        timerTextElements.forEach(el => { if (el.textContent !== timeText) el.textContent = timeText; });
         const totalTime = Math.round((this.settings.pomodoroLength || 0.5) * 60);
         const progress = totalTime > 0 ? Math.min(Math.max(((totalTime - this.timeLeft) / totalTime) * 100, 0), 100) : 0;
         const progressFillElements = document.querySelectorAll('.progress-fill');
-        progressFillElements.forEach(el => {
-            if (el.style.width !== `${progress}%`) {
-                el.style.width = `${progress}%`;
-            }
-        });
+        progressFillElements.forEach(el => { if (el.style.width !== `${progress}%`) el.style.width = `${progress}%`; });
     }
 
     cancelPomodoro() {
         if (this.activeTask?.focusText) {
             this.lastPomodoroFocus = this.activeTask.focusText;
             localStorage.setItem('lastPomodoroFocus', this.lastPomodoroFocus);
-            console.log('Saved last pomodoro focus:', this.lastPomodoroFocus);
         }
         clearInterval(this.timerInterval);
         this.timerInterval = null;
@@ -432,13 +379,8 @@ class FocusHelperApp {
     }
 
     checkAndUnlockAchievements() {
-        if (!Array.isArray(this.stats.achievements)) {
-            this.stats.achievements = [];
-        }
-
-        const hasAchievement = (id) => {
-            return this.stats.achievements.some(a => a && a.id === id);
-        };
+        if (!Array.isArray(this.stats.achievements)) this.stats.achievements = [];
+        const hasAchievement = (id) => this.stats.achievements.some(a => a && a.id === id);
 
         const levelAchievements = {
             1: { id: 'first_steps', title: 'Первые шаги', icon: '🎯' },
@@ -447,74 +389,29 @@ class FocusHelperApp {
             5: { id: 'level_5', title: 'Профессионал', icon: '💪' },
             10: { id: 'level_10', title: 'Мастер', icon: '👑' }
         };
-
         if (levelAchievements[this.stats.level] && !hasAchievement(levelAchievements[this.stats.level].id)) {
             this.stats.achievements.push(levelAchievements[this.stats.level]);
         }
 
         const conditionAchievements = [
-            {
-                id: 'first_steps',
-                title: 'Первые шаги',
-                icon: '🎯',
-                check: () => this.stats.totalSessions >= 1 && !hasAchievement('first_steps')
-            },
-            {
-                id: 'marathon',
-                title: 'Марафонец',
-                icon: '🏃',
-                check: () => this.stats.totalFocusTime >= 600 && !hasAchievement('marathon')
-            },
-            {
-                id: 'dedication',
-                title: 'Преданность',
-                icon: '🔥',
-                check: () => this.stats.totalSessions >= 50 && !hasAchievement('dedication')
-            },
-            {
-                id: 'streak_7',
-                title: 'Неделя силы',
-                icon: '📅',
-                check: () => this.stats.currentStreak >= 7 && !hasAchievement('streak_7')
-            },
-            {
-                id: 'streak_30',
-                title: 'Месяц дисциплины',
-                icon: '🗓️',
-                check: () => this.stats.currentStreak >= 30 && !hasAchievement('streak_30')
-            },
-            {
-                id: 'legend',
-                title: 'Легенда',
-                icon: '🏆',
-                check: () => this.stats.totalFocusTime >= 6000 && !hasAchievement('legend')
-            }
+            { id: 'first_steps', title: 'Первые шаги', icon: '🎯', check: () => this.stats.totalSessions >= 1 && !hasAchievement('first_steps') },
+            { id: 'marathon', title: 'Марафонец', icon: '🏃', check: () => this.stats.totalFocusTime >= 600 && !hasAchievement('marathon') },
+            { id: 'dedication', title: 'Преданность', icon: '🔥', check: () => this.stats.totalSessions >= 50 && !hasAchievement('dedication') },
+            { id: 'streak_7', title: 'Неделя силы', icon: '📅', check: () => this.stats.currentStreak >= 7 && !hasAchievement('streak_7') },
+            { id: 'streak_30', title: 'Месяц дисциплины', icon: '🗓️', check: () => this.stats.currentStreak >= 30 && !hasAchievement('streak_30') },
+            { id: 'legend', title: 'Легенда', icon: '🏆', check: () => this.stats.totalFocusTime >= 6000 && !hasAchievement('legend') }
         ];
-
-        conditionAchievements.forEach(ach => {
-            if (ach.check()) {
-                this.stats.achievements.push({ id: ach.id, title: ach.title, icon: ach.icon });
-            }
-        });
+        conditionAchievements.forEach(ach => { if (ach.check()) this.stats.achievements.push({ id: ach.id, title: ach.title, icon: ach.icon }); });
     }
 
     completePomodoro() {
-        console.log('completePomodoro вызван');
         clearInterval(this.timerInterval);
         this.timerInterval = null;
         this.isRunning = false;
         this.timeLeft = 0;
 
         if (!this.stats) {
-            this.stats = {
-                totalSessions: 0,
-                totalFocusTime: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                level: 1,
-                xp: 0,
-                achievements: []
-            };
+            this.stats = { totalSessions: 0, totalFocusTime: 0, currentStreak: 0, longestStreak: 0, level: 1, xp: 0, achievements: [] };
         }
 
         const xpGained = 10;
@@ -527,16 +424,6 @@ class FocusHelperApp {
 
         this.updateStreak();
         this.checkAndUnlockAchievements();
-
-        console.log('Статистика после завершения сессии:', {
-            totalSessions: this.stats.totalSessions,
-            totalFocusTime: this.stats.totalFocusTime,
-            xp: this.stats.xp,
-            level: this.stats.level,
-            currentStreak: this.stats.currentStreak,
-            longestStreak: this.stats.longestStreak
-        });
-
         this.saveStats(this.stats);
 
         if (this.activeTask?.taskId && this.activeTask?.subTaskId) {
@@ -546,9 +433,7 @@ class FocusHelperApp {
                 if (subTask) {
                     subTask.completedPomodoros++;
                     task.completedPomodoros++;
-                    if (subTask.completedPomodoros >= subTask.estimatedPomodoros) {
-                        subTask.completed = true;
-                    }
+                    if (subTask.completedPomodoros >= subTask.estimatedPomodoros) subTask.completed = true;
                     this.saveTasks(this.tasks);
                 }
             }
@@ -556,34 +441,25 @@ class FocusHelperApp {
 
         this.activeTask = null;
         this.renderApp();
-        console.log('Показываем модальное окно завершения, xpGained:', xpGained, 'levelUp:', levelUp);
         this.showPomodoroCompleteModal(xpGained, levelUp);
-        
         this.syncWithBot();
     }
 
     updateStreak() {
         const today = new Date().toDateString();
         const lastSessionDate = localStorage.getItem('lastPomodoroDate');
-        
-        if (this.stats.currentStreak === undefined || this.stats.currentStreak === null) {
-            this.stats.currentStreak = 0;
-        }
-        if (this.stats.longestStreak === undefined || this.stats.longestStreak === null) {
-            this.stats.longestStreak = 0;
-        }
-        
+        if (this.stats.currentStreak == null) this.stats.currentStreak = 0;
+        if (this.stats.longestStreak == null) this.stats.longestStreak = 0;
+
         if (!lastSessionDate) {
             this.stats.currentStreak = 1;
             localStorage.setItem('lastPomodoroDate', today);
         } else if (lastSessionDate === today) {
             localStorage.setItem('lastPomodoroDate', today);
         } else {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayString = yesterday.toDateString();
-            
-            if (lastSessionDate === yesterdayString) {
+            const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+            const yStr = yesterday.toDateString();
+            if (lastSessionDate === yStr) {
                 this.stats.currentStreak = (this.stats.currentStreak || 0) + 1;
                 localStorage.setItem('lastPomodoroDate', today);
             } else {
@@ -591,182 +467,79 @@ class FocusHelperApp {
                 localStorage.setItem('lastPomodoroDate', today);
             }
         }
-        
-        if (this.stats.currentStreak > this.stats.longestStreak) {
-            this.stats.longestStreak = this.stats.currentStreak;
-        }
-        
-        console.log('Streak updated:', {
-            currentStreak: this.stats.currentStreak,
-            longestStreak: this.stats.longestStreak,
-            lastSessionDate: localStorage.getItem('lastPomodoroDate'),
-            today: today
-        });
+        if (this.stats.currentStreak > this.stats.longestStreak) this.stats.longestStreak = this.stats.currentStreak;
     }
 
     getRandomExercise() {
         const exercises = [
-            "💪 10 отжиманий",
-            "🏃 20 приседаний",
-            "🤸 30 секунд планки",
-            "🧘 5 минут растяжки",
-            "🚶 Пройдись по комнате 2 минуты",
-            "👆 20 наклонов головы в стороны",
-            "🔄 10 круговых движений плечами",
-            "🦵 15 выпадов на каждую ногу",
-            "🤲 10 подъемов на носки",
-            "💨 Глубокое дыхание: 5 вдохов-выдохов",
-            "👋 20 махов руками",
-            "🦶 15 подъемов коленей"
+            "💪 10 отжиманий","🏃 20 приседаний","🤸 30 секунд планки","🧘 5 минут растяжки","🚶 Пройдись по комнате 2 минуты",
+            "👆 20 наклонов головы в стороны","🔄 10 круговых движений плечами","🦵 15 выпадов на каждую ногу","🤲 10 подъемов на носки",
+            "💨 Глубокое дыхание: 5 вдохов-выдохов","👋 20 махов руками","🦶 15 подъемов коленей"
         ];
         return exercises[Math.floor(Math.random() * exercises.length)];
     }
 
     showPomodoroCompleteModal(xpGained, levelUp) {
-        console.log('showPomodoroCompleteModal вызван');
         const exercise = this.getRandomExercise();
-        
         const existingModal = document.querySelector('.pomodoro-complete-modal');
-        if (existingModal) {
-            existingModal.remove();
-        }
-        
+        if (existingModal) existingModal.remove();
+
         const modal = document.createElement('div');
         modal.className = 'pomodoro-complete-modal';
         modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.6);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-            animation: fadeIn 0.3s ease;
+            position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,.6);
+            display:flex; justify-content:center; align-items:center; z-index:10000; animation: fadeIn .3s ease;
         `;
-
         const modalContent = document.createElement('div');
         modalContent.className = 'pomodoro-complete-modal-content';
         modalContent.style.cssText = `
-            background: white;
-            border-radius: 24px;
-            padding: 32px;
-            max-width: 400px;
-            width: 90%;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            animation: slideUp 0.3s ease;
+            background:white; border-radius:24px; padding:32px; max-width:400px; width:90%; text-align:center;
+            box-shadow:0 20px 60px rgba(0,0,0,.3); animation: slideUp .3s ease;
         `;
-
-        let levelUpText = '';
-        if (levelUp) {
-            levelUpText = `<div style="color: var(--primary); font-weight: bold; margin-bottom: 16px; font-size: 18px;">🎉 Новый уровень! 🎉</div>`;
-        }
+        let levelUpText = levelUp ? `<div style="color: var(--primary); font-weight: 700; margin-bottom: 16px; font-size: 18px;">🎉 Новый уровень! 🎉</div>` : '';
 
         modalContent.innerHTML = `
-            <div style="font-size: 64px; margin-bottom: 16px;">🎉</div>
-            <h2 style="font-size: 24px; margin-bottom: 8px; color: var(--text);">Молодец!</h2>
-            <p style="color: var(--text-secondary); margin-bottom: 24px;">Сессия завершена успешно</p>
+            <div style="font-size:64px;margin-bottom:16px">🎉</div>
+            <h2 style="font-size:24px;margin-bottom:8px;color:var(--text)">Молодец!</h2>
+            <p style="color:var(--text-secondary);margin-bottom:24px;">Сессия завершена успешно</p>
             ${levelUpText}
-            <div style="background: linear-gradient(135deg, var(--primary), var(--accent)); 
-                        color: white; 
-                        padding: 16px; 
-                        border-radius: 12px; 
-                        margin-bottom: 24px;">
-                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">Получено XP</div>
-                <div style="font-size: 32px; font-weight: bold;">+${xpGained}</div>
+            <div style="background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;padding:16px;border-radius:12px;margin-bottom:24px;">
+                <div style="font-size:14px;opacity:.9;margin-bottom:4px;">Получено XP</div>
+                <div style="font-size:32px;font-weight:800;">+${xpGained}</div>
             </div>
-            <div style="background: var(--background-secondary); 
-                        padding: 20px; 
-                        border-radius: 12px; 
-                        margin-bottom: 24px;">
-                <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text);">
-                    ⏰ Отдохни 5 минут
-                </div>
-                <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px;">
-                    Предлагаем сделать физ разминку:
-                </div>
-                <div style="font-size: 18px; font-weight: 600; color: var(--primary);">
-                    ${exercise}
-                </div>
+            <div style="background:var(--background-secondary);padding:20px;border-radius:12px;margin-bottom:24px;">
+                <div style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text)">⏰ Отдохни 5 минут</div>
+                <div style="font-size:14px;color:var(--text-secondary);margin-bottom:16px;">Предлагаем сделать физ разминку:</div>
+                <div style="font-size:18px;font-weight:700;color:var(--primary)">${exercise}</div>
             </div>
-            <button class="btn primary" style="width: 100%;" id="closePomodoroModal">
-                Продолжить
-            </button>
+            <button class="btn primary" style="width:100%" id="closePomodoroModal">Продолжить</button>
         `;
-
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
 
-        const closeModal = () => {
-            console.log('Закрываем модальное окно');
-            if (document.body.contains(modal)) {
-                document.body.removeChild(modal);
-            }
-            this.navigateTo('home');
-        };
-
+        const closeModal = () => { if (document.body.contains(modal)) document.body.removeChild(modal); this.navigateTo('home'); };
         setTimeout(() => {
             const closeBtn = document.getElementById('closePomodoroModal');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', closeModal);
-            }
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) closeModal();
-            });
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
         }, 100);
-        
-        console.log('Модальное окно добавлено в DOM');
     }
 
     startQuickPomodoro() {
-        console.log('startQuickPomodoro called, activeTask exists:', !!this.activeTask);
-        if (this.activeTask) {
-            this.navigateTo('pomodoro');
-        } else {
-            this.showQuickPomodoroModal();
-        }
+        if (this.activeTask) this.navigateTo('pomodoro');
+        else this.showQuickPomodoroModal();
     }
 
     deleteTask(taskId) {
-        if (!taskId) {
-            console.error('deleteTask: taskId is missing');
-            return;
-        }
+        if (!taskId) return;
         const idStr = String(taskId);
         const beforeCount = this.tasks.length;
-        console.log('deleteTask before filter:', { taskId: idStr, tasks: this.tasks.map(t => ({ id: String(t.id), title: t.title })) });
-        
-        const originalTasks = [...this.tasks];
-        this.tasks = this.tasks.filter(t => {
-            const taskIdStr = String(t.id);
-            const shouldKeep = taskIdStr !== idStr;
-            console.log('Filtering task:', { taskId: taskIdStr, shouldKeep, match: taskIdStr === idStr });
-            return shouldKeep;
-        });
-        
+        this.tasks = this.tasks.filter(t => String(t.id) !== idStr);
         const afterCount = this.tasks.length;
-        console.log('deleteTask after filter:', { 
-            taskId: idStr, 
-            beforeCount, 
-            afterCount, 
-            deleted: beforeCount > afterCount,
-            originalTasks: originalTasks.map(t => String(t.id)),
-            remainingTasks: this.tasks.map(t => String(t.id))
-        });
-        
         if (beforeCount === afterCount) {
-            console.error('deleteTask: Task was not deleted!', { 
-                taskId: idStr, 
-                allTaskIds: this.tasks.map(t => String(t.id)),
-                originalTaskIds: originalTasks.map(t => String(t.id))
-            });
             alert('Ошибка: задача не была удалена. Проверьте консоль для деталей.');
             return;
         }
-        
         this.saveTasks(this.tasks);
         this.syncWithBot();
         if (this.selectedTaskId === idStr) {
@@ -780,134 +553,59 @@ class FocusHelperApp {
     showDeleteTaskConfirm(taskId) {
         const modal = document.createElement('div');
         modal.className = 'confirm-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
+        modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;`;
         const modalContent = document.createElement('div');
         modalContent.className = 'confirm-modal-content';
-        modalContent.style.cssText = `
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-        `;
-        
+        modalContent.style.cssText = `background:white;padding:24px;border-radius:12px;max-width:400px;width:90%;`;
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">Удалить задачу?</h2>
             <p style="margin-bottom: 24px; color: #666;">Это действие нельзя отменить.</p>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn primary" id="confirmDeleteTask" style="flex: 1; background: var(--error);">Удалить</button>
-                <button class="btn secondary" id="cancelDeleteTask" style="flex: 1;">Отмена</button>
-            </div>
-        `;
-        
+            <div style="display:flex;gap:12px;">
+              <button class="btn primary" id="confirmDeleteTask" style="flex:1;background:var(--error)">Удалить</button>
+              <button class="btn secondary" id="cancelDeleteTask" style="flex:1">Отмена</button>
+            </div>`;
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-        
-        const confirmBtn = document.getElementById('confirmDeleteTask');
-        const cancelBtn = document.getElementById('cancelDeleteTask');
-        
-        const closeModal = () => {
-            if (document.body.contains(modal)) {
-                document.body.removeChild(modal);
-            }
-        };
-        
-        confirmBtn.addEventListener('click', () => {
-            console.log('Calling deleteTask with:', taskId);
-            this.deleteTask(taskId);
-            closeModal();
-        });
-        
-        cancelBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+
+        const close = () => document.body.contains(modal) && document.body.removeChild(modal);
+        modal.querySelector('#confirmDeleteTask').addEventListener('click', () => { this.deleteTask(taskId); close(); });
+        modal.querySelector('#cancelDeleteTask').addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     }
 
     showDeleteSubTaskConfirm(taskId, subTaskId) {
         const modal = document.createElement('div');
         modal.className = 'confirm-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
+        modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;`;
         const modalContent = document.createElement('div');
         modalContent.className = 'confirm-modal-content';
-        modalContent.style.cssText = `
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-        `;
-        
+        modalContent.style.cssText = `background:white;padding:24px;border-radius:12px;max-width:400px;width:90%;`;
         modalContent.innerHTML = `
             <h2 style="margin-bottom: 16px;">Удалить действие из плана?</h2>
             <p style="margin-bottom: 24px; color: #666;">Это действие нельзя отменить.</p>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn primary" id="confirmDeleteSubTask" style="flex: 1; background: var(--error);">Удалить</button>
-                <button class="btn secondary" id="cancelDeleteSubTask" style="flex: 1;">Отмена</button>
-            </div>
-        `;
-        
+            <div style="display:flex;gap:12px;">
+              <button class="btn primary" id="confirmDeleteSubTask" style="flex:1;background:var(--error)">Удалить</button>
+              <button class="btn secondary" id="cancelDeleteSubTask" style="flex:1">Отмена</button>
+            </div>`;
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-        
-        const confirmBtn = document.getElementById('confirmDeleteSubTask');
-        const cancelBtn = document.getElementById('cancelDeleteSubTask');
-        
-        const closeModal = () => {
-            if (document.body.contains(modal)) {
-                document.body.removeChild(modal);
-            }
-        };
-        
-        confirmBtn.addEventListener('click', () => {
-            this.deleteSubTask(taskId, subTaskId);
-            closeModal();
-        });
-        
-        cancelBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+
+        const close = () => document.body.contains(modal) && document.body.removeChild(modal);
+        modal.querySelector('#confirmDeleteSubTask').addEventListener('click', () => { this.deleteSubTask(taskId, subTaskId); close(); });
+        modal.querySelector('#cancelDeleteSubTask').addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     }
 
     deleteSubTask(taskId, subTaskId) {
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) return;
-        
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) return;
-
         const oldPomodoros = subTask.estimatedPomodoros;
         const oldCompleted = subTask.completedPomodoros;
         task.subTasks = task.subTasks.filter(st => Number(st.id) !== Number(subTaskId));
-        
         task.totalPomodoros = task.totalPomodoros - oldPomodoros;
         task.completedPomodoros = Math.max(0, task.completedPomodoros - oldCompleted);
-        
         this.saveTasks(this.tasks);
         this.syncWithBot();
         this.renderApp();
@@ -916,140 +614,73 @@ class FocusHelperApp {
     showQuickPomodoroModal() {
         const modal = document.createElement('div');
         modal.className = 'focus-input-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
+        modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;`;
         const modalContent = document.createElement('div');
         modalContent.className = 'focus-input-modal-content';
-        modalContent.style.cssText = `
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-        `;
-        
+        modalContent.style.cssText = `background:white;padding:24px;border-radius:12px;max-width:400px;width:90%;`;
         modalContent.innerHTML = `
-            <h2 style="margin-bottom: 16px;">На что фокус?</h2>
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
-            <input type="text" id="focusInput" value="${this.lastPomodoroFocus || ''}" placeholder="Например: Изучить новую тему" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
-            <div style="display: flex; gap: 12px;">
-                <button class="btn primary" id="startQuickFocusPomodoro" style="flex: 1;">Начать Pomodoro</button>
-                <button class="btn secondary" id="cancelQuickFocusInput" style="flex: 1;">Отмена</button>
-            </div>
-        `;
-        
+            <h2 style="margin-bottom:16px;">На что фокус?</h2>
+            <label style="display:block;margin-bottom:8px;font-weight:600;">Опиши задачу для фокуса:</label>
+            <input type="text" id="focusInput" value="${this.lastPomodoroFocus || ''}" placeholder="Например: Изучить новую тему" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:16px;">
+            <div style="display:flex;gap:12px;">
+              <button class="btn primary" id="startQuickFocusPomodoro" style="flex:1;">Начать Pomodoro</button>
+              <button class="btn secondary" id="cancelQuickFocusInput" style="flex:1;">Отмена</button>
+            </div>`;
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-        
+
         const focusInput = document.getElementById('focusInput');
         setTimeout(() => focusInput.focus(), 100);
-        
-        const startBtn = document.getElementById('startQuickFocusPomodoro');
-        const cancelBtn = document.getElementById('cancelQuickFocusInput');
-        
-        const closeModal = () => {
-            if (document.body.contains(modal)) {
-                document.body.removeChild(modal);
-            }
-        };
-        
+        const close = () => { if (document.body.contains(modal)) document.body.removeChild(modal); };
+
         const startPomodoro = () => {
             const focusText = document.getElementById('focusInput').value.trim();
-            if (!focusText) {
-                alert('Пожалуйста, введите задачу для фокуса');
-                return;
-            }
-            
+            if (!focusText) return alert('Пожалуйста, введите задачу для фокуса');
             this.lastPomodoroFocus = focusText;
             localStorage.setItem('lastPomodoroFocus', focusText);
-            this.activeTask = { focusText: focusText };
+            this.activeTask = { focusText };
             this.timeLeft = Math.round((this.settings.pomodoroLength || 0.5) * 60);
             this.isRunning = false;
             this.isPaused = false;
-            
-            closeModal();
+            close();
             this.navigateTo('pomodoro');
         };
-        
-        startBtn.addEventListener('click', startPomodoro);
-        cancelBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+
+        modal.querySelector('#startQuickFocusPomodoro').addEventListener('click', startPomodoro);
+        modal.querySelector('#cancelQuickFocusInput').addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     }
 
     showFocusInputModal() {
         const modal = document.createElement('div');
         modal.className = 'focus-input-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
+        modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;`;
         const modalContent = document.createElement('div');
         modalContent.className = 'focus-input-modal-content';
-        modalContent.style.cssText = `
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-        `;
-        
+        modalContent.style.cssText = `background:white;padding:24px;border-radius:12px;max-width:400px;width:90%;`;
         modalContent.innerHTML = `
-            <h2 style="margin-bottom: 16px;">На что фокус?</h2>
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Опиши задачу для фокуса:</label>
-            <input type="text" id="focusInput" value="${this.lastPomodoroFocus || ''}" placeholder="Например: Изучить новую тему" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
-            <div style="display: flex; gap: 12px;">
-                <button class="btn primary" id="startFocusPomodoro" style="flex: 1;">Начать Pomodoro</button>
-                <button class="btn secondary" id="cancelFocusInput" style="flex: 1;">Отмена</button>
-            </div>
-        `;
-        
+            <h2 style="margin-bottom:16px;">На что фокус?</h2>
+            <label style="display:block;margin-bottom:8px;font-weight:600;">Опиши задачу для фокуса:</label>
+            <input type="text" id="focusInput" value="${this.lastPomodoroFocus || ''}" placeholder="Например: Изучить новую тему" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:16px;">
+            <div style="display:flex;gap:12px;">
+              <button class="btn primary" id="startFocusPomodoro" style="flex:1;">Начать Pomodoro</button>
+              <button class="btn secondary" id="cancelFocusInput" style="flex:1;">Отмена</button>
+            </div>`;
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-        
+
         const focusInput = document.getElementById('focusInput');
         setTimeout(() => focusInput.focus(), 100);
-        
-        const startBtn = document.getElementById('startFocusPomodoro');
-        const cancelBtn = document.getElementById('cancelFocusInput');
-        
-        const closeModal = () => {
-            if (document.body.contains(modal)) {
-                document.body.removeChild(modal);
-            }
-        };
-        
+
+        const close = () => { if (document.body.contains(modal)) document.body.removeChild(modal); };
+
         const startPomodoro = () => {
             const focusText = document.getElementById('focusInput').value.trim();
-            if (!focusText) {
-                alert('Пожалуйста, введите задачу для фокуса');
-                return;
-            }
-            
+            if (!focusText) return alert('Пожалуйста, введите задачу для фокуса');
+
             this.lastPomodoroFocus = focusText;
             localStorage.setItem('lastPomodoroFocus', focusText);
-            
+
             if (this.tasks.length > 0) {
                 const lastTask = this.tasks[this.tasks.length - 1];
                 if (lastTask && lastTask.subTasks.length > 0) {
@@ -1058,140 +689,81 @@ class FocusHelperApp {
                 } else {
                     this.createTask(focusText).then(() => {
                         const newTask = this.tasks[this.tasks.length - 1];
-                        if (newTask && newTask.subTasks.length > 0) {
-                            this.startPomodoro(newTask.id, newTask.subTasks[0].id, focusText);
-                        }
+                        if (newTask && newTask.subTasks.length > 0) this.startPomodoro(newTask.id, newTask.subTasks[0].id, focusText);
                     });
                 }
             } else {
                 this.createTask(focusText).then(() => {
                     const newTask = this.tasks[this.tasks.length - 1];
-                    if (newTask && newTask.subTasks.length > 0) {
-                        this.startPomodoro(newTask.id, newTask.subTasks[0].id, focusText);
-                    }
+                    if (newTask && newTask.subTasks.length > 0) this.startPomodoro(newTask.id, newTask.subTasks[0].id, focusText);
                 });
             }
-            closeModal();
+            close();
         };
-        
-        startBtn.addEventListener('click', startPomodoro);
-        cancelBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
-        
-        focusInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                startPomodoro();
-            }
-        });
+
+        modal.querySelector('#startFocusPomodoro').addEventListener('click', startPomodoro);
+        modal.querySelector('#cancelFocusInput').addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+        focusInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); startPomodoro(); } });
     }
 
     editSubTask(taskId, subTaskId) {
         const task = this.tasks.find(t => String(t.id) === String(taskId));
         if (!task) return;
-        
         const subTask = task.subTasks.find(st => Number(st.id) === Number(subTaskId));
         if (!subTask) return;
 
         const modal = document.createElement('div');
         modal.className = 'edit-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
+        modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;`;
         const modalContent = document.createElement('div');
         modalContent.className = 'edit-modal-content';
-        modalContent.style.cssText = `
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-        `;
-        
+        modalContent.style.cssText = `background:white;padding:24px;border-radius:12px;max-width:400px;width:90%;`;
         modalContent.innerHTML = `
-            <h2 style="margin-bottom: 16px;">Редактировать подзадачу</h2>
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Название:</label>
-            <input type="text" id="editSubTaskTitle" value="${subTask.title}" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Количество pomodoro сессий:</label>
-            <input type="number" id="editSubTaskPomodoros" value="${subTask.estimatedPomodoros}" min="1" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px;">
-            <div style="display: flex; gap: 12px;">
-                <button class="btn primary" id="saveEditSubTask" style="flex: 1;">Сохранить</button>
-                <button class="btn secondary" id="cancelEditSubTask" style="flex: 1;">Отмена</button>
-            </div>
-        `;
-        
+            <h2 style="margin-bottom:16px;">Редактировать подзадачу</h2>
+            <label style="display:block;margin-bottom:8px;font-weight:600;">Название:</label>
+            <input type="text" id="editSubTaskTitle" value="${subTask.title}" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:16px;">
+            <label style="display:block;margin-bottom:8px;font-weight:600;">Количество pomodoro сессий:</label>
+            <input type="number" id="editSubTaskPomodoros" value="${subTask.estimatedPomodoros}" min="1" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:16px;">
+            <div style="display:flex;gap:12px;">
+              <button class="btn primary" id="saveEditSubTask" style="flex:1;">Сохранить</button>
+              <button class="btn secondary" id="cancelEditSubTask" style="flex:1;">Отмена</button>
+            </div>`;
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
-        
+
         const titleInput = document.getElementById('editSubTaskTitle');
         setTimeout(() => titleInput.focus(), 100);
-        
-        const saveBtn = document.getElementById('saveEditSubTask');
-        const cancelBtn = document.getElementById('cancelEditSubTask');
-        
-        const closeModal = () => {
-            document.body.removeChild(modal);
-        };
-        
+
+        const close = () => document.body.removeChild(modal);
         const saveChanges = () => {
             const newTitle = document.getElementById('editSubTaskTitle').value.trim();
-            const newPomodoros = parseInt(document.getElementById('editSubTaskPomodoros').value);
-            
-            if (newTitle) {
-                subTask.title = newTitle;
-            }
-            
+            const newPomodoros = parseInt(document.getElementById('editSubTaskPomodoros').value, 10);
+            if (newTitle) subTask.title = newTitle;
             if (!isNaN(newPomodoros) && newPomodoros > 0) {
                 const oldPomodoros = subTask.estimatedPomodoros;
                 subTask.estimatedPomodoros = newPomodoros;
                 task.totalPomodoros = task.totalPomodoros - oldPomodoros + newPomodoros;
             }
-            
             this.saveTasks(this.tasks);
             this.syncWithBot();
             this.renderApp();
-            closeModal();
+            close();
         };
-        
-        saveBtn.addEventListener('click', saveChanges);
-        cancelBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
-        
-        titleInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('editSubTaskPomodoros').focus();
-            }
-        });
-        
-        document.getElementById('editSubTaskPomodoros').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                saveChanges();
-            }
-        });
+        modal.querySelector('#saveEditSubTask').addEventListener('click', saveChanges);
+        modal.querySelector('#cancelEditSubTask').addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+        titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('editSubTaskPomodoros').focus(); } });
+        document.getElementById('editSubTaskPomodoros').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveChanges(); } });
     }
 
+    // ---------- РЕНДЕРЫ ----------
     renderOnboarding() {
         return `
             <div class="app-container">
                 <div class="container">
-                    <div class="flex column center" style="text-align: center; margin-bottom: 32px;">
-                        <div style="font-size: 80px; margin-bottom: 16px;">🎯</div>
+                    <div class="flex column center" style="text-align:center;margin-bottom:32px;">
+                        <div style="font-size:80px;margin-bottom:16px;">🎯</div>
                         <h1 class="title">Добро пожаловать в FocusHelper!</h1>
                         <p class="body">Настроим Pomodoro под тебя для максимальной продуктивности.</p>
                     </div>
@@ -1235,14 +807,12 @@ class FocusHelperApp {
         const taskList = this.tasks.map(task => {
             const isTaskDone = this.isTaskCompleted(task);
             return `
-            <div class="task-item" ${isTaskDone ? 'style="opacity: 0.7;"' : ''}>
+            <div class="task-item" ${isTaskDone ? 'style="opacity:0.7;"' : ''}>
                 <div class="task-item-header">
                     <div class="flex center">
                         <div class="emoji-icon">📝</div>
                         <div class="task-item-content">
-                            <div class="task-item-title">
-                                ${task.title} ${isTaskDone ? '✅' : ''}
-                            </div>
+                            <div class="task-item-title">${task.title} ${isTaskDone ? '✅' : ''}</div>
                             <div class="task-item-meta">${task.subTasks.length} шагов • ${task.completedPomodoros}/${task.totalPomodoros} сессий ${isTaskDone ? '• Завершено' : ''}</div>
                         </div>
                     </div>
@@ -1250,21 +820,19 @@ class FocusHelperApp {
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="viewTask" data-id="${task.id}" title="Просмотр">👁️</button>
                         <button class="icon-btn" data-action="deleteTask" data-id="${task.id}" title="Удалить">🗑️</button>
-                    </div>
-                    ` : ''}
+                    </div>` : ''}
                 </div>
-                <div class="progress-bar" style="margin-top: 12px;">
-                    <div class="progress-fill" style="width: ${Math.min((task.completedPomodoros / task.totalPomodoros) * 100, 100)}%;"></div>
+                <div class="progress-bar" style="margin-top:12px;">
+                    <div class="progress-fill" style="width:${Math.min((task.completedPomodoros / task.totalPomodoros) * 100, 100)}%;"></div>
                 </div>
-            </div>
-        `;
+            </div>`;
         }).join('');
 
         return `
             <div class="app-container">
                 <div class="container">
                     <h1 class="title">Твои задачи</h1>
-                    <button class="btn primary" data-action="createTask" style="margin-bottom: 16px;">+ Создать задачу</button>
+                    <button class="btn primary" data-action="createTask" style="margin-bottom:16px;">+ Создать задачу</button>
                     <div class="task-list">${taskList || '<p class="caption">Нет задач. Создай первую!</p>'}</div>
                 </div>
                 ${this.renderNavigation()}
@@ -1275,7 +843,6 @@ class FocusHelperApp {
     renderCreateTask() {
         const today = new Date();
         const minDate = today.toISOString().split('T')[0];
-        
         return `
             <div class="app-container">
                 <div class="container">
@@ -1284,10 +851,10 @@ class FocusHelperApp {
                         <label class="label">Опиши задачу</label>
                         <textarea class="input text-area" id="taskDescription" placeholder="Например: Подготовиться к экзамену"></textarea>
                         <label class="label">Дедлайн (опционально)</label>
-                        <input type="date" class="input" id="deadline" min="${minDate}" style="font-size: 16px;">
-                        <button class="btn primary" data-action="analyzeTask">Разобрать с AI (заглушка)</button>
+                        <input type="date" class="input" id="deadline" min="${minDate}" style="font-size:16px;">
+                        <button class="btn primary" data-action="analyzeTask">Разобрать с AI</button>
                         <div id="generatedPlan"></div>
-                        <button class="btn primary" id="saveTask" style="display: none;" data-action="saveTask">Сохранить план</button>
+                        <button class="btn primary" id="saveTask" style="display:none;" data-action="saveTask">Сохранить план</button>
                     </div>
                 </div>
                 ${this.renderNavigation()}
@@ -1304,11 +871,11 @@ class FocusHelperApp {
             const isSubTaskDone = this.isSubTaskCompleted(st);
             const canStart = this.canStartPomodoroForSubTask(task, st.id);
             return `
-            <div class="task-item" data-subtask-id="${st.id}" ${isSubTaskDone ? 'style="opacity: 0.7;"' : ''}>
+            <div class="task-item" data-subtask-id="${st.id}" ${isSubTaskDone ? 'style="opacity:.7;"' : ''}>
                 <div class="task-item-header">
-                    <div class="flex center" style="flex: 1;">
+                    <div class="flex center" style="flex:1;">
                         <div class="task-item-number">${index + 1}</div>
-                        <div class="task-item-content" style="flex: 1;">
+                        <div class="task-item-content" style="flex:1;">
                             <div class="task-item-title editable-title" data-editable="true" data-subtask-id="${st.id}">
                                 ${st.title} ${isSubTaskDone ? '✅' : ''}
                             </div>
@@ -1319,46 +886,41 @@ class FocusHelperApp {
                     <div class="flex gap-8">
                         <button class="icon-btn" data-action="editSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Редактировать">✏️</button>
                         <button class="icon-btn" data-action="deleteSubTask" data-task-id="${task.id}" data-subtask-id="${st.id}" title="Удалить">🗑️</button>
-                    </div>
-                    ` : ''}
+                    </div>` : ''}
                 </div>
                 ${!isSubTaskDone && !isTaskDone ? `
-                <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+                <div style="margin-top:12px;display:flex;justify-content:flex-end;">
                     ${canStart ? `
-                    <button class="btn primary" style="padding: 8px 12px; font-size: 14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
+                    <button class="btn primary" style="padding:8px 12px;font-size:14px;" data-action="startPomodoro" data-task="${task.id}" data-subtask="${st.id}">▶️ Начать</button>
                     ` : `
-                    <button class="btn secondary" style="padding: 8px 12px; font-size: 14px; opacity: 0.5; cursor: not-allowed;" disabled title="Сначала завершите предыдущие подзадачи">⏸️ Заблокировано</button>
-                    `}
-                </div>
-                ` : ''}
+                    <button class="btn secondary" style="padding:8px 12px;font-size:14px;opacity:.5;cursor:not-allowed;" disabled title="Сначала завершите предыдущие подзадачи">⏸️ Заблокировано</button>`}
+                </div>` : ''}
                 ${st.completedPomodoros > 0 ? `
-                    <div class="progress-bar" style="margin-top: 12px;">
-                        <div class="progress-fill" style="width: ${Math.min((st.completedPomodoros / st.estimatedPomodoros) * 100, 100)}%;"></div>
-                    </div>
-                ` : ''}
-            </div>
-        `;
+                    <div class="progress-bar" style="margin-top:12px;">
+                        <div class="progress-fill" style="width:${Math.min((st.completedPomodoros / st.estimatedPomodoros) * 100, 100)}%;"></div>
+                    </div>` : ''}
+            </div>`;
         }).join('');
 
         return `
             <div class="app-container">
                 <div class="container">
-                    <div class="flex between center" style="margin-bottom: 16px;">
-                        <div style="flex: 1;">
-                            <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto; margin-bottom: 8px;">← Назад</button>
-                            <h1 class="title" style="margin-bottom: 0;">${task.title}</h1>
+                    <div class="flex between center" style="margin-bottom:16px;">
+                        <div style="flex:1;">
+                            <button class="btn tertiary" data-action="navigate" data-view="home" style="padding:8px 16px;font-size:14px;width:auto;margin-bottom:8px;">← Назад</button>
+                            <h1 class="title" style="margin-bottom:0;">${task.title}</h1>
                         </div>
                     </div>
-                    ${task.deadline ? `<p class="subtitle" style="margin-top: 8px;">📅 Дедлайн: ${new Date(task.deadline).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>` : ''}
+                    ${task.deadline ? `<p class="subtitle" style="margin-top:8px;">📅 Дедлайн: ${new Date(task.deadline).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>` : ''}
                     <div class="panel">
-                        <div class="flex between center" style="margin-bottom: 12px;">
+                        <div class="flex between center" style="margin-bottom:12px;">
                             <div class="body">Прогресс</div>
                             <div class="progress-percentage">${Math.round((task.completedPomodoros / task.totalPomodoros) * 100)}%</div>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${ (task.completedPomodoros / task.totalPomodoros) * 100 }%;"></div>
+                            <div class="progress-fill" style="width:${(task.completedPomodoros / task.totalPomodoros) * 100}%;"></div>
                         </div>
-                        <div class="grid cols-3 gap-12" style="margin-top: 16px;">
+                        <div class="grid cols-3 gap-12" style="margin-top:16px;">
                             <div class="stat-box">
                                 <div class="stat-value">${task.completedPomodoros}</div>
                                 <div class="stat-label">Завершено</div>
@@ -1374,10 +936,7 @@ class FocusHelperApp {
                         </div>
                     </div>
                     <div class="panel">
-                        <h2 class="subtitle" style="margin-bottom: 16px;">
-                            План действий 
-                            ${isTaskDone ? '<span style="color: var(--primary); font-size: 14px;">✅ Завершено</span>' : ''}
-                        </h2>
+                        <h2 class="subtitle" style="margin-bottom:16px;">План действий ${isTaskDone ? '<span style="color:var(--primary);font-size:14px;">✅ Завершено</span>' : ''}</h2>
                         <div class="task-list">${subTasksList}</div>
                     </div>
                 </div>
@@ -1388,9 +947,8 @@ class FocusHelperApp {
 
     renderPomodoro() {
         if (!this.activeTask) return this.renderHome();
-
         const isQuickPomodoro = !this.activeTask.taskId || !this.activeTask.subTaskId;
-        
+
         let focusText = 'Фокус';
         if (isQuickPomodoro) {
             focusText = this.activeTask.focusText || 'Фокус';
@@ -1398,15 +956,7 @@ class FocusHelperApp {
             const task = this.tasks.find(t => String(t.id) === String(this.activeTask.taskId));
             const subTask = task?.subTasks.find(st => Number(st.id) === Number(this.activeTask.subTaskId));
             focusText = this.activeTask.focusText || (subTask ? subTask.title : 'Фокус');
-            
-            if (!task || !subTask) {
-                console.error('renderPomodoro: task or subTask not found', { 
-                    taskId: this.activeTask.taskId, 
-                    subTaskId: this.activeTask.subTaskId,
-                    tasks: this.tasks.map(t => ({ id: t.id, title: t.title }))
-                });
-                return this.renderHome();
-            }
+            if (!task || !subTask) return this.renderHome();
         }
 
         const minutes = Math.floor(this.timeLeft / 60);
@@ -1417,8 +967,8 @@ class FocusHelperApp {
         if (!this.isRunning && !this.isPaused) {
             return `
                 <div class="app-container">
-                    <div class="container flex column center" style="text-align: center;">
-                        <div class="flex center" style="margin-bottom: 16px;">
+                    <div class="container flex column center" style="text-align:center;">
+                        <div class="flex center" style="margin-bottom:16px;">
                             <div class="emoji-icon">🍅</div>
                             <div class="body">Фокус на: ${focusText}</div>
                         </div>
@@ -1428,11 +978,11 @@ class FocusHelperApp {
                                 <div class="timer-label">Готов начать?</div>
                             </div>
                         </div>
-                        <div class="flex gap-16" style="margin-top: 24px;">
-                            <button class="btn primary" data-action="startTimer" style="min-width: 200px;">▶️ Начать Pomodoro</button>
+                        <div class="flex gap-16" style="margin-top:24px;">
+                            <button class="btn primary" data-action="startTimer" style="min-width:200px;">▶️ Начать Pomodoro</button>
                         </div>
-                        <div class="flex gap-16" style="margin-top: 16px;">
-                            <button class="btn secondary" data-action="cancelPomodoro" style="min-width: 200px;">❌ Отмена</button>
+                        <div class="flex gap-16" style="margin-top:16px;">
+                            <button class="btn secondary" data-action="cancelPomodoro" style="min-width:200px;">❌ Отмена</button>
                         </div>
                     </div>
                     ${this.renderNavigation()}
@@ -1442,8 +992,8 @@ class FocusHelperApp {
 
         return `
             <div class="app-container">
-                <div class="container flex column center" style="text-align: center;">
-                    <div class="flex center" style="margin-bottom: 16px;">
+                <div class="container flex column center" style="text-align:center;">
+                    <div class="flex center" style="margin-bottom:16px;">
                         <div class="emoji-icon">🍅</div>
                         <div class="body">Фокус на: ${focusText}</div>
                     </div>
@@ -1453,16 +1003,14 @@ class FocusHelperApp {
                             <div class="timer-label">${this.isPaused ? 'Пауза' : 'Фокус-режим'}</div>
                         </div>
                     </div>
-                    <div class="progress-bar" style="width: 100%; max-width: 280px; margin: 16px 0;">
-                        <div class="progress-fill" style="width: ${progress}%;"></div>
+                    <div class="progress-bar" style="width:100%;max-width:280px;margin:16px 0;">
+                        <div class="progress-fill" style="width:${progress}%;"></div>
                     </div>
                     <div class="flex gap-16">
-                        <button class="btn primary" data-action="pausePomodoro" style="min-width: 120px;">
-                            ${this.isPaused ? '▶️ Продолжить' : '⏸️ Пауза'}
-                        </button>
-                        <button class="btn secondary" data-action="cancelPomodoro" style="min-width: 120px;">❌ Отмена</button>
+                        <button class="btn primary" data-action="pausePomodoro" style="min-width:120px;">${this.isPaused ? '▶️ Продолжить' : '⏸️ Пауза'}</button>
+                        <button class="btn secondary" data-action="cancelPomodoro" style="min-width:120px;">❌ Отмена</button>
                     </div>
-                    <p class="caption" style="margin-top: 16px;">Сосредоточься! Уведомлю по завершении.</p>
+                    <p class="caption" style="margin-top:16px;">Сосредоточься! Уведомлю по завершении.</p>
                 </div>
                 ${this.renderNavigation()}
             </div>
@@ -1473,8 +1021,8 @@ class FocusHelperApp {
         return `
             <div class="app-container">
                 <div class="container">
-                    <div class="flex column center" style="text-align: center; margin-bottom: 32px;">
-                        <div style="font-size: 80px; margin-bottom: 16px;">⚙️</div>
+                    <div class="flex column center" style="text-align:center;margin-bottom:32px;">
+                        <div style="font-size:80px;margin-bottom:16px;">⚙️</div>
                         <h1 class="title">Настройки Pomodoro</h1>
                         <p class="body">Настрой Pomodoro под себя для максимальной продуктивности.</p>
                     </div>
@@ -1515,229 +1063,107 @@ class FocusHelperApp {
     }
 
     renderStatistics() {
-        console.log('renderStatistics called, current stats:', this.stats);
-        
         const savedStats = localStorage.getItem('focus_stats');
         if (savedStats) {
-            try {
-                const parsed = JSON.parse(savedStats);
-                console.log('Loaded stats from localStorage:', parsed);
-                this.stats = { ...this.stats, ...parsed };
-            } catch (e) {
-                console.error('Error parsing stats:', e);
-            }
+            try { this.stats = { ...this.stats, ...JSON.parse(savedStats) }; }
+            catch (e) { console.error('Error parsing stats:', e); }
         }
-        
-        if (!this.stats) {
-            this.stats = {
-                totalSessions: 0,
-                totalFocusTime: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                level: 1,
-                xp: 0,
-                achievements: []
-            };
-        }
-        
-        if (!Array.isArray(this.stats.achievements)) {
-            this.stats.achievements = [];
-        }
-        
-        this.stats.totalSessions = this.stats.totalSessions || 0;
-        this.stats.totalFocusTime = this.stats.totalFocusTime || 0;
-        this.stats.currentStreak = this.stats.currentStreak || 0;
-        this.stats.longestStreak = this.stats.longestStreak || 0;
-        this.stats.level = this.stats.level || 1;
-        this.stats.xp = this.stats.xp || 0;
-        
+        if (!this.stats) this.stats = { totalSessions: 0, totalFocusTime: 0, currentStreak: 0, longestStreak: 0, level: 1, xp: 0, achievements: [] };
+        if (!Array.isArray(this.stats.achievements)) this.stats.achievements = [];
+        this.stats.totalSessions ||= 0;
+        this.stats.totalFocusTime ||= 0;
+        this.stats.currentStreak ||= 0;
+        this.stats.longestStreak ||= 0;
+        this.stats.level ||= 1;
+        this.stats.xp ||= 0;
         this.checkAndUnlockAchievements();
-        
-        console.log('Using stats for render:', this.stats);
-        
+
         const hours = Math.floor(this.stats.totalFocusTime / 60);
         const minutes = this.stats.totalFocusTime % 60;
         const levelProgress = this.stats.xp % 100;
 
-        const hasAchievement = (id) => {
-            return Array.isArray(this.stats.achievements) && 
-                this.stats.achievements.some(a => a && a.id === id);
-        };
-
+        const hasAchievement = (id) => Array.isArray(this.stats.achievements) && this.stats.achievements.some(a => a && a.id === id);
         const allAchievements = [
-            { 
-                id: 'first_steps', 
-                title: 'Первые шаги', 
-                icon: '🎯',
-                description: 'Заверши первую сессию',
-                unlockLevel: 1
-            },
-            { 
-                id: 'level_2', 
-                title: 'Новичок', 
-                icon: '⭐',
-                description: 'Достигни 2 уровня',
-                unlockLevel: 2
-            },
-            { 
-                id: 'level_3', 
-                title: 'Опытный', 
-                icon: '🌟',
-                description: 'Достигни 3 уровня',
-                unlockLevel: 3
-            },
-            { 
-                id: 'level_5', 
-                title: 'Профессионал', 
-                icon: '💪',
-                description: 'Достигни 5 уровня',
-                unlockLevel: 5
-            },
-            { 
-                id: 'level_10', 
-                title: 'Мастер', 
-                icon: '👑',
-                description: 'Достигни 10 уровня',
-                unlockLevel: 10
-            },
-            { 
-                id: 'marathon', 
-                title: 'Марафонец', 
-                icon: '🏃',
-                description: '10 часов фокуса',
-                unlockLevel: 3,
-                checkCondition: () => this.stats.totalFocusTime >= 600
-            },
-            { 
-                id: 'dedication', 
-                title: 'Преданность', 
-                icon: '🔥',
-                description: '50 завершенных сессий',
-                unlockLevel: 4,
-                checkCondition: () => this.stats.totalSessions >= 50
-            },
-            { 
-                id: 'streak_7', 
-                title: 'Неделя силы', 
-                icon: '📅',
-                description: '7 дней подряд',
-                unlockLevel: 2,
-                checkCondition: () => this.stats.currentStreak >= 7
-            },
-            { 
-                id: 'streak_30', 
-                title: 'Месяц дисциплины', 
-                icon: '🗓️',
-                description: '30 дней подряд',
-                unlockLevel: 6,
-                checkCondition: () => this.stats.currentStreak >= 30
-            },
-            { 
-                id: 'legend', 
-                title: 'Легенда', 
-                icon: '🏆',
-                description: '100 часов фокуса',
-                unlockLevel: 8,
-                checkCondition: () => this.stats.totalFocusTime >= 6000
-            }
+            { id: 'first_steps', title: 'Первые шаги', icon: '🎯', description: 'Заверши первую сессию', unlockLevel: 1 },
+            { id: 'level_2', title: 'Новичок', icon: '⭐', description: 'Достигни 2 уровня', unlockLevel: 2 },
+            { id: 'level_3', title: 'Опытный', icon: '🌟', description: 'Достигни 3 уровня', unlockLevel: 3 },
+            { id: 'level_5', title: 'Профессионал', icon: '💪', description: 'Достигни 5 уровня', unlockLevel: 5 },
+            { id: 'level_10', title: 'Мастер', icon: '👑', description: 'Достигни 10 уровня', unlockLevel: 10 },
+            { id: 'marathon', title: 'Марафонец', icon: '🏃', description: '10 часов фокуса', unlockLevel: 3, checkCondition: () => this.stats.totalFocusTime >= 600 },
+            { id: 'dedication', title: 'Преданность', icon: '🔥', description: '50 завершенных сессий', unlockLevel: 4, checkCondition: () => this.stats.totalSessions >= 50 },
+            { id: 'streak_7', title: 'Неделя силы', icon: '📅', description: '7 дней подряд', unlockLevel: 2, checkCondition: () => this.stats.currentStreak >= 7 },
+            { id: 'streak_30', title: 'Месяц дисциплины', icon: '🗓️', description: '30 дней подряд', unlockLevel: 6, checkCondition: () => this.stats.currentStreak >= 30 },
+            { id: 'legend', title: 'Легенда', icon: '🏆', description: '100 часов фокуса', unlockLevel: 8, checkCondition: () => this.stats.totalFocusTime >= 6000 }
         ];
 
-        const availableAchievements = allAchievements.filter(ach => 
-            this.stats.level >= ach.unlockLevel
-        );
-
-        const achievements = availableAchievements
-            .filter(ach => hasAchievement(ach.id))
-            .map(ach => `
+        const availableAchievements = allAchievements.filter(ach => this.stats.level >= ach.unlockLevel);
+        const achievements = availableAchievements.filter(ach => hasAchievement(ach.id)).map(ach => `
             <div class="task-item">
                 <div class="flex center">
-                    <span class="emoji-icon" style="opacity: 1;">${ach.icon}</span>
-                    <div class="task-item-content" style="flex: 1;">
-                        <div class="task-item-title" style="opacity: 1;">${ach.title}</div>
-                        <div class="task-item-meta" style="opacity: 0.7;">${ach.description}</div>
+                    <span class="emoji-icon" style="opacity:1;">${ach.icon}</span>
+                    <div class="task-item-content" style="flex:1;">
+                        <div class="task-item-title" style="opacity:1;">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity:.7;">${ach.description}</div>
                     </div>
-                    <span style="color: var(--success); font-size: 20px;">✓</span>
+                    <span style="color:var(--success);font-size:20px;">✓</span>
                 </div>
-            </div>
-        `).join('');
+            </div>`).join('');
 
-        const availableButLocked = availableAchievements
-            .filter(ach => !hasAchievement(ach.id))
-            .map(ach => `
+        const availableButLocked = availableAchievements.filter(ach => !hasAchievement(ach.id)).map(ach => `
             <div class="task-item achievement-locked">
                 <div class="flex center">
-                    <span class="emoji-icon" style="opacity: 0.3;">${ach.icon}</span>
-                    <div class="task-item-content" style="flex: 1;">
-                        <div class="task-item-title" style="opacity: 0.5;">${ach.title}</div>
-                        <div class="task-item-meta" style="opacity: 0.4;">${ach.description}</div>
+                    <span class="emoji-icon" style="opacity:.3;">${ach.icon}</span>
+                    <div class="task-item-content" style="flex:1;">
+                        <div class="task-item-title" style="opacity:.5;">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity:.4;">${ach.description}</div>
                     </div>
-                    <span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>
+                    <span style="color:var(--text-tertiary);font-size:16px;">🔒</span>
                 </div>
-            </div>
-        `).join('');
-        
-        const levelLockedAchievements = allAchievements
-            .filter(ach => this.stats.level < ach.unlockLevel)
-            .slice(0, 3)
-            .map(ach => `
+            </div>`).join('');
+
+        const levelLockedAchievements = allAchievements.filter(ach => this.stats.level < ach.unlockLevel).slice(0, 3).map(ach => `
             <div class="task-item achievement-locked">
                 <div class="flex center">
-                    <span class="emoji-icon" style="opacity: 0.2;">${ach.icon}</span>
-                    <div class="task-item-content" style="flex: 1;">
-                        <div class="task-item-title" style="opacity: 0.4;">${ach.title}</div>
-                        <div class="task-item-meta" style="opacity: 0.3;">Откроется на уровне ${ach.unlockLevel}</div>
+                    <span class="emoji-icon" style="opacity:.2;">${ach.icon}</span>
+                    <div class="task-item-content" style="flex:1;">
+                        <div class="task-item-title" style="opacity:.4;">${ach.title}</div>
+                        <div class="task-item-meta" style="opacity:.3;">Откроется на уровне ${ach.unlockLevel}</div>
                     </div>
-                    <span style="color: var(--text-tertiary); font-size: 16px;">🔒</span>
+                    <span style="color:var(--text-tertiary);font-size:16px;">🔒</span>
                 </div>
-            </div>
-        `).join('');
+            </div>`).join('');
 
         return `
             <div class="app-container">
                 <div class="container">
-                    <div style="margin-bottom: 16px;">
-                        <button class="btn tertiary" data-action="navigate" data-view="home" style="padding: 8px 16px; font-size: 14px; width: auto; margin-bottom: 8px;">← Назад</button>
-                        <h1 class="title" style="margin-bottom: 0;">Статистика</h1>
+                    <div style="margin-bottom:16px;">
+                        <button class="btn tertiary" data-action="navigate" data-view="home" style="padding:8px 16px;font-size:14px;width:auto;margin-bottom:8px;">← Назад</button>
+                        <h1 class="title" style="margin-bottom:0;">Статистика</h1>
                     </div>
                     <div class="panel">
-                        <div class="flex center" style="gap: 16px; margin-bottom: 16px;">
-                            <div style="font-size: 32px;">🏆</div>
+                        <div class="flex center" style="gap:16px;margin-bottom:16px;">
+                            <div style="font-size:32px;">🏆</div>
                             <div>
                                 <div class="body">Уровень ${this.stats.level}</div>
                                 <div class="caption">${levelProgress}/100 XP</div>
                             </div>
                         </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${levelProgress}%;"></div>
-                        </div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:${levelProgress}%;"></div></div>
                     </div>
                     <div class="stats-grid">
-                        <div class="stat-box">
-                            <div class="stat-value">${this.stats.totalSessions}</div>
-                            <div class="stat-label">Сессий</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-value">${hours}ч ${minutes}м</div>
-                            <div class="stat-label">Время фокуса</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-value">${this.stats.currentStreak}</div>
-                            <div class="stat-label">Серия дней</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-value">${this.stats.longestStreak}</div>
-                            <div class="stat-label">Рекорд</div>
-                        </div>
+                        <div class="stat-box"><div class="stat-value">${this.stats.totalSessions}</div><div class="stat-label">Сессий</div></div>
+                        <div class="stat-box"><div class="stat-value">${hours}ч ${minutes}м</div><div class="stat-label">Время фокуса</div></div>
+                        <div class="stat-box"><div class="stat-value">${this.stats.currentStreak}</div><div class="stat-label">Серия дней</div></div>
+                        <div class="stat-box"><div class="stat-value">${this.stats.longestStreak}</div><div class="stat-label">Рекорд</div></div>
                     </div>
                     <div class="panel">
-                        <h2 class="subtitle" style="margin-bottom: 16px;">Достижения</h2>
-                        <div class="task-list">${achievements || '<p class="caption" style="opacity: 0.6;">Пока нет разблокированных достижений</p>'}</div>
+                        <h2 class="subtitle" style="margin-bottom:16px;">Достижения</h2>
+                        <div class="task-list">${achievements || '<p class="caption" style="opacity:.6;">Пока нет разблокированных достижений</p>'}</div>
                         ${(availableButLocked || levelLockedAchievements) ? `
-                            <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);">
-                                <h3 class="subtitle" style="margin-bottom: 16px; opacity: 0.6;">Следующие достижения</h3>
+                            <div style="margin-top:24px;padding-top:24px;border-top:1px solid var(--border);">
+                                <h3 class="subtitle" style="margin-bottom:16px;opacity:.6;">Следующие достижения</h3>
                                 <div class="task-list">${availableButLocked}${levelLockedAchievements}</div>
-                            </div>
-                        ` : ''}
+                            </div>` : ''}
                     </div>
                 </div>
                 ${this.renderNavigation()}
@@ -1748,32 +1174,15 @@ class FocusHelperApp {
     renderApp() {
         const appDiv = document.getElementById('app');
         let content = '<div class="loading">Загрузка...</div>';
-
         switch (this.currentView) {
-            case 'onboarding':
-                content = this.renderOnboarding();
-                break;
-            case 'home':
-                content = this.renderHome();
-                break;
-            case 'createTask':
-                content = this.renderCreateTask();
-                break;
-            case 'taskDetails':
-                const taskId = this.selectedTaskId || ''; 
-                content = this.renderTaskDetails(taskId);
-                break;
-            case 'pomodoro':
-                content = this.renderPomodoro();
-                break;
-            case 'statistics':
-                content = this.renderStatistics();
-                break;
-            case 'settings':
-                content = this.renderSettings();
-                break;
+            case 'onboarding': content = this.renderOnboarding(); break;
+            case 'home': content = this.renderHome(); break;
+            case 'createTask': content = this.renderCreateTask(); break;
+            case 'taskDetails': content = this.renderTaskDetails(this.selectedTaskId || ''); break;
+            case 'pomodoro': content = this.renderPomodoro(); break;
+            case 'statistics': content = this.renderStatistics(); break;
+            case 'settings': content = this.renderSettings(); break;
         }
-
         appDiv.innerHTML = content;
         this.attachDynamicEventListeners();
     }
@@ -1781,214 +1190,241 @@ class FocusHelperApp {
     renderNavigation() {
         return `
             <nav class="navigation">
-                <button class="nav-item ${this.currentView === 'home' ? 'active' : ''}" data-action="navigate" data-view="home">
-                    <span class="icon">📋</span>
-                    <span class="text">Задачи</span>
-                </button>
-                <button class="nav-item ${this.currentView === 'createTask' ? 'active' : ''}" data-action="navigate" data-view="createTask">
-                    <span class="icon">+</span>
-                    <span class="text">Новая</span>
-                </button>
-                <button class="nav-item ${this.currentView === 'pomodoro' ? 'active' : ''}" data-action="startQuickPomodoro">
-                    <span class="icon">🍅</span>
-                    <span class="text">Pomodoro</span>
-                </button>
-                <button class="nav-item ${this.currentView === 'statistics' ? 'active' : ''}" data-action="navigate" data-view="statistics">
-                    <span class="icon">📊</span>
-                    <span class="text">Статистика</span>
-                </button>
-                <button class="nav-item ${this.currentView === 'settings' ? 'active' : ''}" data-action="navigate" data-view="settings">
-                    <span class="icon">⚙️</span>
-                    <span class="text">Настройки</span>
-                </button>
+                <button class="nav-item ${this.currentView === 'home' ? 'active' : ''}" data-action="navigate" data-view="home"><span class="icon">📋</span><span class="text">Задачи</span></button>
+                <button class="nav-item ${this.currentView === 'createTask' ? 'active' : ''}" data-action="navigate" data-view="createTask"><span class="icon">+</span><span class="text">Новая</span></button>
+                <button class="nav-item ${this.currentView === 'pomodoro' ? 'active' : ''}" data-action="startQuickPomodoro"><span class="icon">🍅</span><span class="text">Pomodoro</span></button>
+                <button class="nav-item ${this.currentView === 'statistics' ? 'active' : ''}" data-action="navigate" data-view="statistics"><span class="icon">📊</span><span class="text">Статистика</span></button>
+                <button class="nav-item ${this.currentView === 'settings' ? 'active' : ''}" data-action="navigate" data-view="settings"><span class="icon">⚙️</span><span class="text">Настройки</span></button>
             </nav>
         `;
     }
 
-    attachEventListeners() {
-        if (this.clickHandler) {
-            document.removeEventListener('click', this.clickHandler);
+    // ====== ИНТЕГРАЦИЯ С БЭКЕНДОМ AI ======
+
+    async callAnalyzeTask(description, deadline) { // NEW
+        const userId = this.userData?.userId || 0;
+        const payload = { userId, description, deadline: deadline || null };
+        const res = await fetch(`${this.apiBaseUrl}/analyze_task`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const msg = await res.text().catch(() => '');
+            throw new Error(`AI API error: ${res.status} ${msg}`);
         }
-        
-        this.clickHandler = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
-                return;
-            }
-            
-            if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal') || e.target.closest('.confirm-modal')) {
-                return;
-            }
-            
+        const data = await res.json();
+        if (!data?.success || !Array.isArray(data.subTasks) || data.subTasks.length === 0) {
+            throw new Error('Пустой ответ анализа');
+        }
+        return data;
+    }
+
+    renderGeneratedPlan(subTasks, totalPomodoros) { // NEW
+        const box = document.getElementById('generatedPlan');
+        if (!box) return;
+        const items = subTasks.map((st, i) => `
+            <div class="task-item">
+              <div class="flex between center">
+                <div class="flex center">
+                  <div class="task-item-number">${i + 1}</div>
+                  <div class="task-item-content">
+                    <div class="task-item-title">${st.title}</div>
+                    <div class="task-item-meta">🍅 ${st.estimatedPomodoros} сессий</div>
+                  </div>
+                </div>
+              </div>
+            </div>`).join('');
+        box.innerHTML = `
+            <div class="panel" style="margin-top:12px">
+                <h3 class="subtitle" style="margin-bottom:8px;">Предложенный план</h3>
+                <div class="task-list">${items}</div>
+                <div class="caption" style="margin-top:8px;opacity:.7">Итого: ${totalPomodoros} 🍅</div>
+            </div>`;
+        const saveBtn = document.getElementById('saveTask');
+        if (saveBtn) saveBtn.style.display = 'inline-flex';
+    }
+
+    // ====== LISTENERS ======
+
+    attachEventListeners() {
+        if (this.clickHandler) document.removeEventListener('click', this.clickHandler);
+
+        this.clickHandler = async (e) => {
+            if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+            if (e.target.closest('.edit-modal') || e.target.closest('.focus-input-modal') || e.target.closest('.confirm-modal')) return;
+
             let actionElement = null;
             let current = e.target;
-            
             while (current && current !== document.body) {
-                if (current.hasAttribute && current.hasAttribute('data-action')) {
-                    actionElement = current;
-                    break;
-                }
-                if (current.dataset && current.dataset.action) {
-                    actionElement = current;
-                    break;
-                }
+                if (current.hasAttribute && current.hasAttribute('data-action')) { actionElement = current; break; }
+                if (current.dataset && current.dataset.action) { actionElement = current; break; }
                 current = current.parentElement;
             }
-            
-            if (!actionElement) {
-                return;
-            }
-            
-            const action = actionElement.getAttribute('data-action') || actionElement.dataset.action;
-            if (!action) {
-                return;
-            }
+            if (!actionElement) return;
 
-            console.log('Action clicked:', action, 'element:', actionElement, 'target:', e.target, 'has data-view:', actionElement.hasAttribute('data-view'), 'dataset.view:', actionElement.dataset.view);
+            const action = actionElement.getAttribute('data-action') || actionElement.dataset.action;
+            if (!action) return;
 
             e.stopPropagation();
-
-            if (actionElement.tagName === 'BUTTON' || actionElement.closest('button')) {
-                e.preventDefault();
-            }
+            if (actionElement.tagName === 'BUTTON' || actionElement.closest('button')) e.preventDefault();
 
             if (action === 'navigate') {
                 const view = actionElement.getAttribute('data-view') || actionElement.dataset.view;
-                console.log('navigate clicked:', view, 'element:', actionElement);
-                if (view) {
-                    console.log('Navigating to:', view);
-                    this.navigateTo(view);
-                } else {
-                    console.error('navigate: view is missing', {
-                        actionElement,
-                        allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
-                    });
-                }
+                if (view) this.navigateTo(view);
+
             } else if (action === 'setDailyHours') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
-                this.settings.dailyHours = parseInt(value);
+                this.settings.dailyHours = parseInt(value, 10);
                 this.saveSettings(this.settings);
                 this.renderApp();
+
             } else if (action === 'setProductiveTime') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
                 this.settings.productiveTime = value;
                 this.saveSettings(this.settings);
                 this.renderApp();
+
             } else if (action === 'setPomodoro') {
                 const value = actionElement.getAttribute('data-value') || actionElement.dataset.value;
-                this.settings.pomodoroLength = parseInt(value);
-                this.settings.breakLength = parseInt(value) / 5;
+                this.settings.pomodoroLength = parseInt(value, 10);
+                this.settings.breakLength = parseInt(value, 10) / 5;
                 this.saveSettings(this.settings);
                 this.renderApp();
+
             } else if (action === 'saveSettings') {
-                const pomodoroLength = parseInt(document.getElementById('pomodoroLength')?.value) || this.settings.pomodoroLength;
-                const dailyHours = parseInt(document.getElementById('dailyHours')?.value) || this.settings.dailyHours;
-                const breakLength = parseInt(document.getElementById('breakLength')?.value) || this.settings.breakLength;
-                
+                const pomodoroLength = parseInt(document.getElementById('pomodoroLength')?.value, 10) || this.settings.pomodoroLength;
+                const dailyHours = parseInt(document.getElementById('dailyHours')?.value, 10) || this.settings.dailyHours;
+                const breakLength = parseInt(document.getElementById('breakLength')?.value, 10) || this.settings.breakLength;
                 this.settings.pomodoroLength = pomodoroLength;
                 this.settings.dailyHours = dailyHours;
                 this.settings.breakLength = breakLength;
-                
                 this.saveSettings(this.settings);
                 alert('✅ Настройки сохранены!');
                 this.navigateTo('home');
+
             } else if (action === 'completeOnboarding') {
                 this.completeOnboarding(this.settings);
+
             } else if (action === 'createTask') {
                 this.navigateTo('createTask');
-            } else if (action === 'analyzeTask') {
-                const desc = document.getElementById('taskDescription')?.value;
+
+            } else if (action === 'analyzeTask') { // CHANGED — теперь реально зовём ИИ
+                const desc = document.getElementById('taskDescription')?.value?.trim();
                 const deadlineInput = document.getElementById('deadline');
-                const dl = deadlineInput?.value || null;
-                if (desc) {
+                const dl = (deadlineInput?.value || '').trim() || null;
+
+                if (!desc) { alert('Опиши задачу перед анализом'); return; }
+
+                const box = document.getElementById('generatedPlan');
+                if (box) box.innerHTML = `<div class="caption">🤖 Анализирую задачу...</div>`;
+
+                try {
+                    const ai = await this.callAnalyzeTask(desc, dl);
+                    const now = Date.now();
+                    const subTasks = ai.subTasks.map((st, idx) => ({
+                        id: now + idx + 1,
+                        title: st.title,
+                        estimatedPomodoros: Number(st.estimatedPomodoros) || 1,
+                        completed: false,
+                        completedPomodoros: 0
+                    }));
+
+                    let deadlineDate = undefined;
+                    if (dl) {
+                        const d = new Date(dl);
+                        deadlineDate = isNaN(d.getTime()) ? dl : d.toISOString();
+                    }
+
+                    this.draftTask = {
+                        id: now.toString(),
+                        title: desc,
+                        deadline: deadlineDate,
+                        subTasks,
+                        createdAt: new Date().toISOString(),
+                        totalPomodoros: subTasks.reduce((s, st) => s + st.estimatedPomodoros, 0),
+                        completedPomodoros: 0
+                    };
+
+                    this.renderGeneratedPlan(subTasks, this.draftTask.totalPomodoros);
+                } catch (err) {
+                    console.error(err);
+                    alert('Не удалось связаться с ИИ, создаю базовый план.');
                     this.createTask(desc, dl);
-                    alert('AI-анализ (заглушка): План создан с базовыми шагами!');
                 }
-            } else if (action === 'saveTask') {
-                this.navigateTo('home');
+
+            } else if (action === 'saveTask') { // CHANGED — сохраняем черновик AI
+                if (this.draftTask) {
+                    this.tasks.push(this.draftTask);
+                    this.saveTasks(this.tasks);
+                    await this.syncWithBot();
+                    this.selectedTaskId = this.draftTask.id;
+                    this.draftTask = null;
+                    this.navigateTo('taskDetails');
+                } else {
+                    this.navigateTo('home');
+                }
+
             } else if (action === 'viewTask') {
                 const taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
-                if (taskId) {
-                    this.selectedTaskId = taskId;
-                    this.navigateTo('taskDetails');
-                }
+                if (taskId) { this.selectedTaskId = taskId; this.navigateTo('taskDetails'); }
+
             } else if (action === 'deleteTask') {
                 let taskId = actionElement.getAttribute('data-id') || actionElement.dataset.id;
-                
                 if (!taskId) {
                     let current = actionElement;
                     for (let i = 0; i < 5 && current; i++) {
-                        if (current.hasAttribute && current.hasAttribute('data-id')) {
-                            taskId = current.getAttribute('data-id');
-                            break;
-                        }
-                        if (current.dataset && current.dataset.id) {
-                            taskId = current.dataset.id;
-                            break;
-                        }
+                        if (current.hasAttribute && current.hasAttribute('data-id')) { taskId = current.getAttribute('data-id'); break; }
+                        if (current.dataset && current.dataset.id) { taskId = current.dataset.id; break; }
                         current = current.parentElement;
                     }
                 }
-                
-                console.log('deleteTask clicked:', {
-                    taskId,
-                    actionElement,
-                    target: e.target
-                });
-                
-                if (taskId) {
-                    this.showDeleteTaskConfirm(taskId);
-                } else {
-                    console.error('deleteTask: taskId not found', {
-                        actionElement,
-                        allAttributes: Array.from(actionElement.attributes).map(attr => ({ name: attr.name, value: attr.value }))
-                    });
-                    alert('Ошибка: не удалось найти ID задачи для удаления. Проверьте консоль.');
-                }
+                if (taskId) this.showDeleteTaskConfirm(taskId);
+                else alert('Ошибка: не удалось найти ID задачи для удаления. Проверьте консоль.');
+
             } else if (action === 'startPomodoro') {
                 const taskId = actionElement.getAttribute('data-task') || actionElement.dataset.task;
-                const subTaskId = parseInt(actionElement.getAttribute('data-subtask') || actionElement.dataset.subtask);
-                if (taskId && subTaskId && !isNaN(subTaskId)) {
-                    this.startPomodoro(taskId, subTaskId);
-                }
+                const subTaskId = parseInt(actionElement.getAttribute('data-subtask') || actionElement.dataset.subtask, 10);
+                if (taskId && subTaskId && !isNaN(subTaskId)) this.startPomodoro(taskId, subTaskId);
+
             } else if (action === 'pausePomodoro') {
                 this.pausePomodoro();
                 this.renderApp();
+
             } else if (action === 'cancelPomodoro') {
                 this.cancelPomodoro();
+
             } else if (action === 'startQuickPomodoro') {
                 this.startQuickPomodoro();
+
             } else if (action === 'startTimer') {
                 this.startTimer();
+
             } else if (action === 'editSubTask') {
                 const taskId = actionElement.getAttribute('data-task-id') || actionElement.dataset.taskId;
-                const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId);
-                if (taskId && subTaskId) {
-                    this.editSubTask(taskId, subTaskId);
-                }
+                const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId, 10);
+                if (taskId && subTaskId) this.editSubTask(taskId, subTaskId);
+
             } else if (action === 'deleteSubTask') {
                 const taskId = actionElement.getAttribute('data-task-id') || actionElement.dataset.taskId;
-                const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId);
-                if (taskId && subTaskId) {
-                    this.showDeleteSubTaskConfirm(taskId, subTaskId);
-                }
+                const subTaskId = parseInt(actionElement.getAttribute('data-subtask-id') || actionElement.dataset.subtaskId, 10);
+                if (taskId && subTaskId) this.showDeleteSubTaskConfirm(taskId, subTaskId);
             }
-            
+
             if (e.target.classList.contains('editable-title') && e.target.dataset.subtaskId) {
                 const taskItem = e.target.closest('.task-item');
                 if (taskItem) {
                     const taskId = this.selectedTaskId;
-                    const subTaskId = parseInt(e.target.dataset.subtaskId);
-                    if (taskId && subTaskId) {
-                        this.editSubTask(taskId, subTaskId);
-                    }
+                    const subTaskId = parseInt(e.target.dataset.subtaskId, 10);
+                    if (taskId && subTaskId) this.editSubTask(taskId, subTaskId);
                 }
             }
         };
-        
         document.addEventListener('click', this.clickHandler);
     }
 
     attachDynamicEventListeners() {
+        // здесь можно навесить динамические слушатели, если появляются элементы вне click-delegation
     }
 }
 
