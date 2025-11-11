@@ -34,7 +34,7 @@ class FocusHelperApp {
 
         // === LLM интеграция ===
         this.llm = null;
-        initLLM().then(engine => { this.llm = engine; });
+        this.llmReady = this.initLLM();
 
         this.init();
     }
